@@ -1,6 +1,7 @@
-# IBEHS-3P04-Project
+# Nonspecific Neck Pain Remote Monitoring System   
 
-This is the work I have completed for IBEHS 3P04
+This is the work I have completed for IBEHS 3P04 - Health Solutions Design project III
+
 
 The P0 folder consists of project 0 which is an introductory project that we worked on at the beginning of the school term. 
 
