@@ -7,6 +7,25 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
 import serial
+from kivy.lang import Builder
+Builder.load_string('''
+<MyScreenManager>:
+    WelcomeScreen:
+    LoginScreen:
+    ModeScreen:
+    Mode3Screen:
+''')
+
+
+class WelcomeScreen(BoxLayout, Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_widget(Label(text="Say Bye to all of your neck pain"))
+        self.add_widget(Button(text='Login', on_press=self.enter))
+
+    def enter(self, instance):
+        screen_manager.current = 'login'
+        print("pressed")
 
 
 class LoginScreen(BoxLayout, Screen):
@@ -35,8 +54,6 @@ class LoginScreen(BoxLayout, Screen):
 class ModeScreen(BoxLayout, Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # username_label = Label(text='Username:', size_hint=(0.3, 1))
-        # password_label = Label(text='Password:', size_hint=(0.3, 1))
         self.add_widget(Button(text='Neck Only', on_pressed=self.mode1))
         self.add_widget(Button(text='Back Only', on_pressed=self.mode2))
         self.add_widget(Button(text='Neck and Back', on_press=self.mode3))
@@ -51,7 +68,7 @@ class ModeScreen(BoxLayout, Screen):
         screen_manager.current = 'main_mode3'
 
 
-class MainMode3Screen(BoxLayout, Screen):
+class Mode3Screen(BoxLayout, Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.serial_data = ""
@@ -111,10 +128,12 @@ class MyApp(App):
     def build(self):
         global screen_manager
         screen_manager = MyScreenManager()
+        screen_manager.add_widget(WelcomeScreen(name='welcome'))
         screen_manager.add_widget(LoginScreen(name='login'))
         screen_manager.add_widget(ModeScreen(name='mode'))
-        screen_manager.add_widget(MainMode3Screen(name='main_mode3'))
+        screen_manager.add_widget(Mode3Screen(name='main_mode3'))
         return screen_manager
+
 
 
 if __name__ == '__main__':
