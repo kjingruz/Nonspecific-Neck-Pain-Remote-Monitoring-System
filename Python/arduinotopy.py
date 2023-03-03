@@ -26,13 +26,32 @@ class LoginScreen(BoxLayout, Screen):
         username = self.username_input.text
         password = self.password_input.text
 
-        if password == 'password':
-            screen_manager.current = 'main'
+        if password == '1':
+            screen_manager.current = 'mode'
         else:
             self.add_widget(Label(text='Invalid password.'))
 
 
-class MainScreen(BoxLayout, Screen):
+class ModeScreen(BoxLayout, Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # username_label = Label(text='Username:', size_hint=(0.3, 1))
+        # password_label = Label(text='Password:', size_hint=(0.3, 1))
+        self.add_widget(Button(text='Neck Only', on_pressed=self.mode1))
+        self.add_widget(Button(text='Back Only', on_pressed=self.mode2))
+        self.add_widget(Button(text='Neck and Back', on_press=self.mode3))
+
+    def mode1(self, instance):
+        screen_manager.current = 'main_mode1'
+
+    def mode2(self, instance):
+        screen_manager.current = 'main_mode2'
+
+    def mode3(self, instance):
+        screen_manager.current = 'main_mode3'
+
+
+class MainMode3Screen(BoxLayout, Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.serial_data = ""
@@ -52,7 +71,7 @@ class MainScreen(BoxLayout, Screen):
         self.scroll_view.add_widget(self.label)
 
         # Open the serial port
-        self.serial_port = serial.Serial("/dev/cu.usbserial-1120", 115200)
+        self.serial_port = serial.Serial("/dev/cu.usbserial-110", 115200)
 
         # Schedule the receive_data method to be called every 0.1 seconds
         Clock.schedule_interval(self.receive_data, 1)
@@ -63,12 +82,19 @@ class MainScreen(BoxLayout, Screen):
         # Check if there is data available on the serial port
         if self.serial_port.in_waiting > 0:
             # Read the data from the serial port
-            print("1")
-            data = self.serial_port.readline().decode()
-            print("2")
+            data = self.serial_port.readline().decode().strip()
+
+            x_index = data.find('X:')
+            z_index = data.find('Z:')
+            x_val = data[x_index + 2:x_index + 6]
+            z_val = data[z_index + 2:z_index + 6]
+
+            # Format the data to display on the Label
+            formatted_data = f"X: {x_val}\nZ: {z_val}"
 
             # Add the new data to the existing data
-            self.serial_data += "\n" + data
+
+            self.serial_data += "\n" + formatted_data
 
             # Update the Label with the new data
             self.label.text = self.serial_data
@@ -86,7 +112,8 @@ class MyApp(App):
         global screen_manager
         screen_manager = MyScreenManager()
         screen_manager.add_widget(LoginScreen(name='login'))
-        screen_manager.add_widget(MainScreen(name='main'))
+        screen_manager.add_widget(ModeScreen(name='mode'))
+        screen_manager.add_widget(MainMode3Screen(name='main_mode3'))
         return screen_manager
 
 
