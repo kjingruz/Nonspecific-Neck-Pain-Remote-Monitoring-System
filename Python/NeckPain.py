@@ -26,10 +26,18 @@ Builder.load_string('''
 <WelcomeScreen>:
     BoxLayout:
         orientation: 'vertical'
+        Image:
+            source: 'path/to/image/file.png'
+            allow_stretch: True
+            keep_ratio: False
         Label:
             text: "Say Bye to all of your neck pain"
+            size_hint: 1, 0.8
+            font_size: '40sp'
         Button:
             text: 'Login'
+            size_hint: 0.5, 0.2
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
             on_press: root.enter()
 
 <LoginScreen>:
@@ -164,7 +172,6 @@ class MainMode3Screen(Screen):
 
         close_button = Button(text='Close', size_hint=(1, 0.2))
 
-        content.add_widget(Label(text='Settings'))
         content.add_widget(Label(text='Stagnation Time (seconds):'))
         content.add_widget(stagnation_time_dropdown)
         content.add_widget(confirm_button)
@@ -209,7 +216,7 @@ class MainMode3Screen(Screen):
 
             self.internal_timer.cancel()
             notification.notify(title='Stagnation Time Reached',
-                                message='You have been inactive for {} seconds.'.format(self.stagnation_time),
+                                message='You have been in the same posture for {} seconds.'.format(self.stagnation_time),
                                 app_name=App.get_running_app().title)
 
     def stop_timer(self):
