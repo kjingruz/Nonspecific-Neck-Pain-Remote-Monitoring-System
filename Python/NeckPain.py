@@ -1,5 +1,6 @@
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
@@ -10,7 +11,6 @@ from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.uix.popup import Popup
-from kivy.config import ConfigParser
 
 import serial
 import sqlite3
@@ -41,22 +41,62 @@ Builder.load_string('''
             on_press: root.enter()
 
 <LoginScreen>:
+    canvas.before:
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            source: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/LoginBackground.jpeg'
     BoxLayout:
         orientation: 'vertical'
-        Label:
-            text: 'Username:'
-        TextInput:
-            id: username
-            multiline: False
-        Label:
-            text: 'Password:'
-        TextInput:
-            id: password
-            multiline: False
-            password: True
-        Button:
-            text: 'Login'
-            on_press: root.login()
+        padding: 50
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 1, 0.8
+            spacing: 10
+            padding: 10
+            Label:
+                text: 'Username:'
+                font_size: '20sp'
+                size_hint: None, None
+                size: self.texture_size
+                color: (0,0,0,1)
+            TextInput:
+                id: username
+                multiline: False
+                size_hint: 0.8, None
+                height: 40
+                font_size: '20sp'
+                background_color: (1, 1, 1, 0.7)
+            Label:
+                text: 'Password:'
+                font_size: '20sp'
+                size_hint: None, None
+                size: self.texture_size
+                color: (0,0,0,1)
+            TextInput:
+                id: password
+                multiline: False
+                password: True
+                size_hint: 0.8, None
+                height: 40
+                font_size: '20sp'
+                background_color: (1, 1, 1, 0.7)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: 1, 0.2
+            spacing: 20
+            padding: 10
+            Button:
+                text: 'Login'
+                size_hint: 0.4, None
+                height: 60
+                pos_hint: {"center_x": 0.5}
+                font_size: '20sp'
+                background_color: (0.4, 0.8, 0.7, 1)
+                color: (1, 1, 1, 1)
+                on_press: root.login()
+
+
 
 <ModeScreen>:
     BoxLayout:
@@ -64,12 +104,15 @@ Builder.load_string('''
         Button:
             text: 'Neck Only'
             on_press: root.mode1()
+            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/neck.jpg'
         Button:
             text: 'Back Only'
             on_press: root.mode2()
+            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/back.jpeg'
         Button:
             text: 'Neck and Back'
             on_press: root.mode3()
+            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/neck_back.jpg'
 
 <CustomSpinner>:
     text: '10'
@@ -132,8 +175,10 @@ class MainMode3Screen(Screen):
         self.internal_timer = None
         self.stagnation_time = 10
         self.start_time = 0
+        self.serial_port = None
+        self.scroll_view = None
+        self.datalabel = None
 
-        # create label to display stagnation time
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
         self.add_widget(self.stagnation_time_label)
@@ -156,6 +201,18 @@ class MainMode3Screen(Screen):
         if row:
             self.stagnation_time = row[0]
             self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+
+        layout = BoxLayout(orientation='vertical')
+
+        # Add a ScrollView to the layout
+        self.scroll_view = ScrollView()
+        layout.add_widget(self.scroll_view)
+
+        # Create a Label to display the serial data
+        self.datalabel = Label(text="No data received yet.", font_size=20)
+
+        # Add the Label to the ScrollView
+        self.scroll_view.add_widget(self.datalabel)
 
 
     def update_option(self, spinner, option, value):
@@ -222,6 +279,62 @@ class MainMode3Screen(Screen):
     def stop_timer(self):
         if self.internal_timer is not None:
             self.internal_timer.cancel()
+
+    def start(self):
+
+        try:
+            # Open the serial port
+            self.serial_port = serial.Serial("/dev/cu.usbserial-10", 115200)
+
+            # Schedule the receive_data method to be called every 0.1 seconds
+            Clock.schedule_interval(self.receive_data, .1)
+
+
+        except serial.serialutil.SerialException:
+            error_message = "Could not connect \nto the serial port."
+            error_popup = Popup(title="Error",
+                                content=GridLayout(cols=1,
+                                                   rows=2,
+                                                   size_hint=(None, None),
+                                                   size=(400, 400),
+                                                   padding=50,
+                                                   spacing=20,
+                                                   ),
+                                size_hint=(None, None),
+                                size=(400, 400))
+
+            # Create the Label and add it to the GridLayout
+            error_label = Label(text=error_message, halign='center', valign='middle')
+            error_popup.content.add_widget(error_label)
+
+            # Create the button and add it to the GridLayout
+            okay_button = Button(text='Okay', size_hint=(None, None), size=(100, 50))
+            okay_button.bind(on_release=error_popup.dismiss)
+            error_popup.content.add_widget(okay_button)
+
+            error_popup.open()
+
+        return self.scroll_view
+
+    def on_stop(self):
+        if self.serial_port:
+            self.serial_port.close()
+
+    def receive_data(self, dt):
+        if self.serial_port and self.serial_port.in_waiting > 0:
+            data = self.serial_port.readline().decode().strip()
+            if data:
+                try:
+                    values = data.split('\t')
+                    x = int(values[0].split(':')[1])
+                    z = int(values[1].split(':')[1])
+                    self.datalabel.text = f'X: {x} Z: {z}'
+
+                except:
+                    self.datalabel.text = 'Invalid data format'
+
+                # Scroll to the bottom of the ScrollView
+                self.scroll_view.scroll_y = 0
 
 
 class MainMode1Screen(BoxLayout, Screen):
