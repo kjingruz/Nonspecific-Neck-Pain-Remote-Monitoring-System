@@ -27,11 +27,11 @@ Builder.load_string('''
     BoxLayout:
         orientation: 'vertical'
         Image:
-            source: 'path/to/image/file.png'
+            source: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/WelcomeBackground.png'
             allow_stretch: True
             keep_ratio: False
         Label:
-            text: "Say Bye to all of your neck pain"
+            text: "Say GoodBye to all of your neck pain"
             size_hint: 1, 0.8
             font_size: '40sp'
         Button:
