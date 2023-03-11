@@ -13,8 +13,10 @@ from kivy.lang import Builder
 from kivy.uix.popup import Popup
 
 import serial
+import serial.tools.list_ports
 import sqlite3
 from plyer import notification
+from datetime import datetime
 
 Builder.load_string('''
 <MyScreenManager>:
@@ -95,8 +97,6 @@ Builder.load_string('''
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
                 on_press: root.login()
-
-
 
 <ModeScreen>:
     BoxLayout:
@@ -281,14 +281,18 @@ class MainMode3Screen(Screen):
             self.internal_timer.cancel()
 
     def start(self):
-
         try:
             # Open the serial port
-            self.serial_port = serial.Serial("/dev/cu.usbserial-10", 115200)
+            ports = serial.tools.list_ports.comports()
+            for port in ports:
+                if 'Arduino' in port.description:
+                    self.arduino_port = port.device
+                    break
+            # Establish serial communication
+            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, .1)
-
 
         except serial.serialutil.SerialException:
             error_message = "Could not connect \nto the serial port."
@@ -321,17 +325,66 @@ class MainMode3Screen(Screen):
             self.serial_port.close()
 
     def receive_data(self, dt):
-        if self.serial_port and self.serial_port.in_waiting > 0:
-            data = self.serial_port.readline().decode().strip()
-            if data:
-                try:
-                    values = data.split('\t')
-                    x = int(values[0].split(':')[1])
-                    z = int(values[1].split(':')[1])
-                    self.datalabel.text = f'X: {x} Z: {z}'
+        # Connect to SQLite database
+        conn = sqlite3.connect('sensor_data.db')
+        cursor = conn.cursor()
 
+        # Create table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS sensor_data
+                        (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp TEXT)''')
+        conn.commit()
+        time.sleep(2)
+        if self.serial_port and self.serial_port.in_waiting > 0:
+            rolling_back_shift = []
+            rolling_back_lean = []
+            rolling_head_lean = []
+            rolling_head_shift = []
+
+            # Start reading and storing data from Arduino
+            start_time = time.time()
+            while True:
+                try:
+                    # Read data from serial port
+                    data = ser.readline().decode().strip().split(',')
+                    if len(data) == 4:
+                        # Store data in variables
+                        back_shift = float(data[0])
+                        back_lean = float(data[1])
+                        head_lean = float(data[2])
+                        head_shift = float(data[3])
+                        # Add data to rolling average
+                        rolling_back_shift.append(back_shift)
+                        rolling_back_lean.append(back_lean)
+                        rolling_head_lean.append(head_lean)
+                        rolling_head_shift.append(head_shift)
+                        # Remove oldest data if rolling average exceeds 10 seconds
+                        elapsed_time = time.time() - start_time
+                        if elapsed_time > 10:
+                            rolling_back_shift.pop(0)
+                            rolling_back_lean.pop(0)
+                            rolling_head_lean.pop(0)
+                            rolling_head_shift.pop(0)
+                            start_time = time.time()
+                        # Calculate rolling average
+                        avg_back_shift = sum(rolling_back_shift) / len(rolling_back_shift)
+                        avg_back_lean = sum(rolling_back_lean) / len(rolling_back_lean)
+                        avg_head_lean = sum(rolling_head_lean) / len(rolling_head_lean)
+                        avg_head_shift = sum(rolling_head_shift) / len(rolling_head_shift)
+                        # Insert data into SQLite database
+                        cursor.execute(
+                            "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
+                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, time.time()))
+                        conn.commit()
+                        # Print data for testing purposes
+                        print(
+                            f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
                 except:
-                    self.datalabel.text = 'Invalid data format'
+                    print("Failed to read data from Arduino")
+                    break
+
+                self.serial_port.close()
+                cursor.close()
+                conn.close()
 
                 # Scroll to the bottom of the ScrollView
                 self.scroll_view.scroll_y = 0
