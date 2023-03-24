@@ -15,6 +15,7 @@ from kivy.uix.popup import Popup
 import serial
 import serial.tools.list_ports
 import sqlite3
+import time
 from plyer import notification
 from datetime import datetime
 
@@ -22,8 +23,7 @@ Builder.load_string('''
 <MyScreenManager>:
     WelcomeScreen:
     LoginScreen:
-    ModeScreen:
-    MainMode3Screen:
+    MainScreen:
 
 <WelcomeScreen>:
     BoxLayout:
@@ -97,28 +97,12 @@ Builder.load_string('''
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
                 on_press: root.login()
-
-<ModeScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        Button:
-            text: 'Neck Only'
-            on_press: root.mode1()
-            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/neck.jpg'
-        Button:
-            text: 'Back Only'
-            on_press: root.mode2()
-            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/back.jpeg'
-        Button:
-            text: 'Neck and Back'
-            on_press: root.mode3()
-            background_normal: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/neck_back.jpg'
-
+                
 <CustomSpinner>:
     text: '10'
     values: [str(i) for i in range(10, 61, 5)]
 
-<MainMode3Screen>:
+<MainScreen>:
     BoxLayout:
         orientation: 'vertical'
         Button:
@@ -127,9 +111,23 @@ Builder.load_string('''
             size_hint: (0.2, 0.1)
             on_press: root.start()
         Button:
+            id: stop_btn
+            text: 'Stop'
+            size_hint: (0.2, 0.1)
+            on_press: root.stop_serial()
+            opacity: 0
+            disabled: True
+        Button:
             text: 'Setting'
             size_hint: (0.2, 0.1)
             on_press: root.show_settings_popup()
+        Button:
+            text: 'Analysis'
+            size_hint: (0.2, 0.1)
+        Button:
+            text: 'Data Log'
+            size_hint: (0.2, 0.1)
+            on_press: root.load_data_from_db()
         ScrollView:
             Label:
                 id: label
@@ -149,27 +147,16 @@ class LoginScreen(Screen):
         password = self.ids.password.text
 
         if password == '1':
-            screen_manager.current = 'mode'
+            screen_manager.current = 'main'
         else:
             self.add_widget(Label(text='Invalid password.'))
-
-
-class ModeScreen(Screen):
-    def mode1(self):
-        screen_manager.current = 'main_mode1'
-
-    def mode2(self):
-        screen_manager.current = 'main_mode2'
-
-    def mode3(self):
-        screen_manager.current = 'main_mode3'
 
 
 class CustomSpinner(Spinner):
     pass
 
 
-class MainMode3Screen(Screen):
+class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.internal_timer = None
@@ -178,6 +165,7 @@ class MainMode3Screen(Screen):
         self.serial_port = None
         self.scroll_view = None
         self.datalabel = None
+        self.arduino_port = None
 
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
@@ -214,6 +202,7 @@ class MainMode3Screen(Screen):
         # Add the Label to the ScrollView
         self.scroll_view.add_widget(self.datalabel)
 
+        self.arduino_port = "/dev/cu.usbserial-10"
 
     def update_option(self, spinner, option, value):
         spinner.text = option.text
@@ -276,6 +265,16 @@ class MainMode3Screen(Screen):
                                 message='You have been in the same posture for {} seconds.'.format(self.stagnation_time),
                                 app_name=App.get_running_app().title)
 
+    def stop_serial(self):
+        if self.serial_port:
+            self.serial_port.close()
+            self.serial_port = None
+            Clock.unschedule(self.receive_data)
+        self.ids.stop_btn.opacity = 0
+        self.ids.stop_btn.disabled = True
+        self.ids.start_btn.opacity = 1
+        self.ids.start_btn.disabled = False
+
     def stop_timer(self):
         if self.internal_timer is not None:
             self.internal_timer.cancel()
@@ -283,13 +282,13 @@ class MainMode3Screen(Screen):
     def start(self):
         try:
             # Open the serial port
-            ports = serial.tools.list_ports.comports()
-            for port in ports:
-                if 'Arduino' in port.description:
-                    self.arduino_port = port.device
-                    break
             # Establish serial communication
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+            if self.serial_port:
+                self.ids.stop_btn.opacity = 1
+                self.ids.stop_btn.disabled = False
+                self.ids.start_btn.opacity = 0
+                self.ids.start_btn.disabled = True
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, .1)
@@ -326,79 +325,76 @@ class MainMode3Screen(Screen):
 
     def receive_data(self, dt):
         # Connect to SQLite database
-        conn = sqlite3.connect('sensor_data.db')
-        cursor = conn.cursor()
+        self.sensorconn = sqlite3.connect('sensor_data.db')
+        self.sensorcursor = self.sensorconn.cursor()
 
         # Create table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS sensor_data
+        self.sensorcursor.execute('''CREATE TABLE IF NOT EXISTS sensor_data
                         (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp TEXT)''')
-        conn.commit()
+        self.sensorconn.commit()
         time.sleep(2)
         if self.serial_port and self.serial_port.in_waiting > 0:
-            rolling_back_shift = []
-            rolling_back_lean = []
-            rolling_head_lean = []
-            rolling_head_shift = []
+            rolling_data = []
 
             # Start reading and storing data from Arduino
-            start_time = time.time()
             while True:
                 try:
                     # Read data from serial port
-                    data = ser.readline().decode().strip().split(',')
+                    data = self.serial_port.readline().decode().strip().split(',')
                     if len(data) == 4:
-                        # Store data in variables
-                        back_shift = float(data[0])
-                        back_lean = float(data[1])
-                        head_lean = float(data[2])
-                        head_shift = float(data[3])
-                        # Add data to rolling average
-                        rolling_back_shift.append(back_shift)
-                        rolling_back_lean.append(back_lean)
-                        rolling_head_lean.append(head_lean)
-                        rolling_head_shift.append(head_shift)
+                        # Store data in variables and append timestamp
+                        current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
+                        rolling_data.append(current_data)
+
                         # Remove oldest data if rolling average exceeds 10 seconds
-                        elapsed_time = time.time() - start_time
-                        if elapsed_time > 10:
-                            rolling_back_shift.pop(0)
-                            rolling_back_lean.pop(0)
-                            rolling_head_lean.pop(0)
-                            rolling_head_shift.pop(0)
-                            start_time = time.time()
+                        while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
+                            rolling_data.pop(0)
+
                         # Calculate rolling average
-                        avg_back_shift = sum(rolling_back_shift) / len(rolling_back_shift)
-                        avg_back_lean = sum(rolling_back_lean) / len(rolling_back_lean)
-                        avg_head_lean = sum(rolling_head_lean) / len(rolling_head_lean)
-                        avg_head_shift = sum(rolling_head_shift) / len(rolling_head_shift)
+                        avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
+                        avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
+                        avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
+                        avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
+
                         # Insert data into SQLite database
-                        cursor.execute(
+                        self.sensorcursor.execute(
                             "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
-                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, time.time()))
-                        conn.commit()
-                        # Print data for testing purposes
+                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
+                        self.sensorconn.commit()
+
+                        # Print data for testing purposesl
                         print(
                             f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
                 except:
                     print("Failed to read data from Arduino")
                     break
 
-                self.serial_port.close()
-                cursor.close()
-                conn.close()
+            self.serial_port.close()
+            self.sensorcursor.close()
+            self.sensorconn.close()
 
-                # Scroll to the bottom of the ScrollView
-                self.scroll_view.scroll_y = 0
+            # Scroll to the bottom of the ScrollView
+            self.scroll_view.scroll_y = 0
 
+    def load_data_from_db(self):
+        # Connect to SQLite database
+        self.sensorconn = sqlite3.connect('sensor_data.db')
+        self.sensorcursor = self.sensorconn.cursor()
 
-class MainMode1Screen(BoxLayout, Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.add_widget(Label(text="Hello World"))
+        # Fetch all data from sensor_data table
+        self.sensorcursor.execute("SELECT * FROM sensor_data")
+        rows = self.sensorcursor.fetchall()
 
-class MainMode2Screen(BoxLayout, Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.add_widget(Label(text="Hello World"))
+        # Clear the existing text in the datalabel
+        self.datalabel.text = ""
+
+        # Loop through the fetched data and display it in the datalabel
+        for row in rows:
+            self.datalabel.text += f"Back Shift: {row[0]}, Back Lean: {row[1]}, Head Lean: {row[2]}, Head Shift: {row[3]}, Timestamp: {row[4]}\n"
+
+        # Close the cursor and connection
+        self.sensorcursor.close()
+        self.sensorconn.close()
 
 
 class MyScreenManager(ScreenManager):
@@ -408,10 +404,7 @@ screen_manager = MyScreenManager()
 
 screen_manager.add_widget(WelcomeScreen(name='welcome'))
 screen_manager.add_widget(LoginScreen(name='login'))
-screen_manager.add_widget(ModeScreen(name='mode'))
-screen_manager.add_widget(MainMode1Screen(name='main_mode1'))
-screen_manager.add_widget(MainMode2Screen(name='main_mode2'))
-screen_manager.add_widget(MainMode3Screen(name='main_mode3'))
+screen_manager.add_widget(MainScreen(name='main'))
 
 class NeckPainApp(App):
     def build(self):
