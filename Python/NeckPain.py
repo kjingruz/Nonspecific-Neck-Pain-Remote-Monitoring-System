@@ -162,10 +162,10 @@ class MainScreen(Screen):
         self.internal_timer = None
         self.stagnation_time = 10
         self.start_time = 0
-        self.serial_port = None
+        self.arduino_port = "/dev/cu.usbserial-1120"
+        self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         self.scroll_view = None
         self.datalabel = None
-        self.arduino_port = None
 
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
@@ -201,8 +201,6 @@ class MainScreen(Screen):
 
         # Add the Label to the ScrollView
         self.scroll_view.add_widget(self.datalabel)
-
-        self.arduino_port = "/dev/cu.usbserial-10"
 
     def update_option(self, spinner, option, value):
         spinner.text = option.text
@@ -266,11 +264,10 @@ class MainScreen(Screen):
                                 app_name=App.get_running_app().title)
 
     def stop_serial(self):
-        if self.serial_port:
-            self.serial_port.close()
-            self.serial_port = None
-            Clock.unschedule(self.receive_data)
+        self.close_serial_connection()
+        Clock.unschedule(self.receive_data)
         self.ids.stop_btn.opacity = 0
+        self.datalabel.text = "Stopped reading data, please view data log to view the data"
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
@@ -282,8 +279,8 @@ class MainScreen(Screen):
     def start(self):
         try:
             # Open the serial port
-            # Establish serial communication
-            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+            self.open_serial_connection()
+
             if self.serial_port:
                 self.ids.stop_btn.opacity = 1
                 self.ids.stop_btn.disabled = False
@@ -292,6 +289,7 @@ class MainScreen(Screen):
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, .1)
+            self.datalabel.text = "Currently reading data"
 
         except serial.serialutil.SerialException:
             error_message = "Could not connect \nto the serial port."
@@ -319,9 +317,22 @@ class MainScreen(Screen):
 
         return self.scroll_view
 
-    def on_stop(self):
+    def show_data_log(self):
+        if not self.serial_port:
+            data_log = '\n'.join([f"{row[0]}, {row[1]}, {row[2]}, {row[3]}, {row[4]}" for row in
+                                  self.sensorcursor.execute("SELECT * FROM sensor_data")])
+            self.ids.label.text = f"Data Log:\n{data_log}"
+        else:
+            self.ids.label.text = "Please stop the serial communication to view the data log."
+
+    def open_serial_connection(self):
+        if self.serial_port is None:
+            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+
+    def close_serial_connection(self):
         if self.serial_port:
             self.serial_port.close()
+            self.serial_port = None
 
     def receive_data(self, dt):
         # Connect to SQLite database
@@ -332,44 +343,40 @@ class MainScreen(Screen):
         self.sensorcursor.execute('''CREATE TABLE IF NOT EXISTS sensor_data
                         (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp TEXT)''')
         self.sensorconn.commit()
-        time.sleep(2)
+
+        # Start reading and storing data from Arduino
         if self.serial_port and self.serial_port.in_waiting > 0:
             rolling_data = []
-
-            # Start reading and storing data from Arduino
-            while True:
+            # Read data from serial port
+            data = self.serial_port.readline().decode().strip().split(',')
+            if len(data) == 4:
                 try:
-                    # Read data from serial port
-                    data = self.serial_port.readline().decode().strip().split(',')
-                    if len(data) == 4:
-                        # Store data in variables and append timestamp
-                        current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
-                        rolling_data.append(current_data)
+                    # Store data in variables and append timestamp
+                    current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
+                    rolling_data.append(current_data)
 
-                        # Remove oldest data if rolling average exceeds 10 seconds
-                        while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
-                            rolling_data.pop(0)
+                    # Remove oldest data if rolling average exceeds 10 seconds
+                    while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
+                        rolling_data.pop(0)
 
-                        # Calculate rolling average
-                        avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
-                        avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
-                        avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
-                        avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
+                    # Calculate rolling average
+                    avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
+                    avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
+                    avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
+                    avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
 
-                        # Insert data into SQLite database
-                        self.sensorcursor.execute(
-                            "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
-                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
-                        self.sensorconn.commit()
+                    # Insert data into SQLite database
+                    self.sensorcursor.execute(
+                        "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
+                        (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
+                    self.sensorconn.commit()
 
-                        # Print data for testing purposesl
-                        print(
-                            f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
+                    # Print data for testing purposes
+                    print(
+                        f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
                 except:
-                    print("Failed to read data from Arduino")
-                    break
+                    self.datalabel = Label(text="Stopped reading data", font_size=20)
 
-            self.serial_port.close()
             self.sensorcursor.close()
             self.sensorconn.close()
 
