@@ -98,7 +98,7 @@ Builder.load_string('''
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
                 on_press: root.login()
-                
+
 <CustomSpinner>:
     text: '10'
     values: [str(i) for i in range(10, 61, 5)]
@@ -265,7 +265,8 @@ class MainScreen(Screen):
 
             self.internal_timer.cancel()
             notification.notify(title='Stagnation Time Reached',
-                                message='You have been in the same posture for {} seconds.'.format(self.stagnation_time),
+                                message='You have been in the same posture for {} seconds.'.format(
+                                    self.stagnation_time),
                                 app_name=App.get_running_app().title)
 
     def stop_serial(self):
@@ -380,7 +381,7 @@ class MainScreen(Screen):
                     print(
                         f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
                 except:
-                    self.datalabel = Label(text="Stopped reading data", font_size=20)
+                    self.datalabel.text = "Stopped reading data"
 
             self.sensorcursor.close()
             self.sensorconn.close()
@@ -398,7 +399,9 @@ class MainScreen(Screen):
         # Format the header and data rows
         header = "{:<15} {:<15} {:<15} {:<15} {:<20}".format("Back Shift", "Back Lean", "Head Lean", "Head Shift",
                                                              "Timestamp")
-        data_log_text = "\n".join([f"{row[0]:<15.2f} {row[1]:<15.2f} {row[2]:<15.2f} {row[3]:<15.2f} {datetime.fromtimestamp(float(row[4])).strftime('%Y-%m-%d %H:%M:%S')}" for row in data])
+        data_log_text = "\n".join([
+                                      f"{row[0]:<15.2f} {row[1]:<15.2f} {row[2]:<15.2f} {row[3]:<15.2f} {datetime.fromtimestamp(float(row[4])).strftime('%Y-%m-%d %H:%M:%S')}"
+                                      for row in data])
 
         # Create a scroll view and a box layout for the data log
         scroll_view = ScrollView(do_scroll_x=False, do_scroll_y=True, size_hint=(1, 0.6), bar_width=10)
@@ -479,16 +482,18 @@ class MainScreen(Screen):
 class MyScreenManager(ScreenManager):
     pass
 
+
 screen_manager = MyScreenManager()
 
 screen_manager.add_widget(WelcomeScreen(name='welcome'))
 screen_manager.add_widget(LoginScreen(name='login'))
 screen_manager.add_widget(MainScreen(name='main'))
 
+
 class NeckPainApp(App):
     def build(self):
         return screen_manager
 
+
 if __name__ == '__main__':
     NeckPainApp().run()
-
