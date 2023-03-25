@@ -128,6 +128,10 @@ Builder.load_string('''
             text: 'Data Log'
             size_hint: (0.2, 0.1)
             on_press: root.load_data_from_db()
+        Button:
+            text: 'Clear Data'
+            size_hint: (0.2, 0.1)
+            on_press: root.reset_sensor_data_db()
         ScrollView:
             Label:
                 id: label
@@ -383,6 +387,28 @@ class MainScreen(Screen):
             # Scroll to the bottom of the ScrollView
             self.scroll_view.scroll_y = 0
 
+    def create_data_popup(self, data):
+        layout = BoxLayout(orientation='vertical')
+        close_button = Button(text='Close', size_hint=(1, 0.2))
+        layout.add_widget(Label(text='Data Log:'))
+
+        data_grid = GridLayout(cols=4, size_hint_y=None, spacing=10)
+        data_grid.bind(minimum_height=data_grid.setter('height'))
+        for row in data:
+            data_grid.add_widget(Label(text=f"Back Shift: {row[0]}"))
+            data_grid.add_widget(Label(text=f"Back Lean: {row[1]}"))
+            data_grid.add_widget(Label(text=f"Head Lean: {row[2]}"))
+            data_grid.add_widget(Label(text=f"Head Shift: {row[3]}"))
+
+        scroll_view = ScrollView(size_hint=(1, 0.8), bar_width='10dp')
+        scroll_view.add_widget(data_grid)
+        layout.add_widget(scroll_view)
+
+        layout.add_widget(close_button)
+        popup = Popup(title='Data Log', content=layout, size_hint=(0.8, 0.8), auto_dismiss=False)
+        close_button.bind(on_press=popup.dismiss)
+        popup.open()
+
     def load_data_from_db(self):
         # Connect to SQLite database
         self.sensorconn = sqlite3.connect('sensor_data.db')
@@ -390,18 +416,55 @@ class MainScreen(Screen):
 
         # Fetch all data from sensor_data table
         self.sensorcursor.execute("SELECT * FROM sensor_data")
-        rows = self.sensorcursor.fetchall()
+        data = self.sensorcursor.fetchall()
 
-        # Clear the existing text in the datalabel
-        self.datalabel.text = ""
+        # Create and show the data log popup
+        self.create_data_popup(data)
 
-        # Loop through the fetched data and display it in the datalabel
-        for row in rows:
-            self.datalabel.text += f"Back Shift: {row[0]}, Back Lean: {row[1]}, Head Lean: {row[2]}, Head Shift: {row[3]}, Timestamp: {row[4]}\n"
-
-        # Close the cursor and connection
+        # Close the cursor and the connection
         self.sensorcursor.close()
         self.sensorconn.close()
+
+    def reset_sensor_data_db(self):
+        content = BoxLayout(orientation='vertical')
+
+        message = Label(text="Are you sure you want to reset the data?")
+        content.add_widget(message)
+
+        buttons_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.5))
+        yes_button = Button(text='Yes')
+        no_button = Button(text='No')
+
+        buttons_layout.add_widget(yes_button)
+        buttons_layout.add_widget(no_button)
+        content.add_widget(buttons_layout)
+
+        confirm_reset_popup = Popup(title='Confirm Reset', content=content, size_hint=(0.4, 0.3), auto_dismiss=False)
+
+        yes_button.bind(on_press=lambda x: self.perform_reset(confirm_reset_popup))
+        no_button.bind(on_press=confirm_reset_popup.dismiss)
+
+        confirm_reset_popup.open()
+
+    def perform_reset(self, popup):
+        # Connect to SQLite database
+        self.sensorconn = sqlite3.connect('sensor_data.db')
+        self.sensorcursor = self.sensorconn.cursor()
+
+        # Delete all data from sensor_data table
+        self.sensorcursor.execute("DELETE FROM sensor_data")
+        self.sensorconn.commit()
+
+        # Optimize the database
+        self.sensorcursor.execute("VACUUM")
+        self.sensorconn.commit()
+
+        # Close the cursor and the connection
+        self.sensorcursor.close()
+        self.sensorconn.close()
+
+        # Dismiss the popup
+        popup.dismiss()
 
 
 class MyScreenManager(ScreenManager):
