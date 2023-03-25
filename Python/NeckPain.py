@@ -354,12 +354,25 @@ class MainScreen(Screen):
                 # Handle the error by displaying an error message
                 error_message = "Device not configured.\nPlease check the connection."
                 error_popup = Popup(title="Error",
-                                    content=Label(text=error_message),
+                                    content=GridLayout(cols=1,
+                                                       rows=2,
+                                                       size_hint=(None, None),
+                                                       size=(400, 400),
+                                                       padding=50,
+                                                       spacing=20,
+                                                       ),
                                     size_hint=(None, None),
                                     size=(400, 400))
-                okay_button = Button(text='Okay', size_hint=(1, 0.2))
-                okay_button.bind(on_release=error_popup.dismiss)
-                error_popup.content.add_widget(okay_button)
+
+                # Create the Label and add it to the GridLayout
+                error_label = Label(text=error_message, halign='center', valign='middle')
+                error_popup.content.add_widget(error_label)
+
+                # Create the button and add it to the GridLayout
+                close_button = Button(text='Close', size_hint=(None, None), size=(100, 50))
+                close_button.bind(on_press=error_popup.dismiss)
+                error_popup.content.add_widget(close_button)
+
                 error_popup.open()
 
     def create_data_popup(self, data):
