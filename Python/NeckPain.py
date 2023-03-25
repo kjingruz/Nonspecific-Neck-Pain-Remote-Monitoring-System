@@ -16,6 +16,7 @@ import serial
 import serial.tools.list_ports
 import sqlite3
 import time
+from datetime import datetime
 from plyer import notification
 from datetime import datetime
 
@@ -387,24 +388,32 @@ class MainScreen(Screen):
             # Scroll to the bottom of the ScrollView
             self.scroll_view.scroll_y = 0
 
+    import datetime
+
     def create_data_popup(self, data):
         layout = BoxLayout(orientation='vertical')
         close_button = Button(text='Close', size_hint=(1, 0.2))
         layout.add_widget(Label(text='Data Log:'))
 
-        data_grid = GridLayout(cols=4, size_hint_y=None, spacing=10)
-        data_grid.bind(minimum_height=data_grid.setter('height'))
-        for row in data:
-            data_grid.add_widget(Label(text=f"Back Shift: {row[0]}"))
-            data_grid.add_widget(Label(text=f"Back Lean: {row[1]}"))
-            data_grid.add_widget(Label(text=f"Head Lean: {row[2]}"))
-            data_grid.add_widget(Label(text=f"Head Shift: {row[3]}"))
+        # Format the header and data rows
+        header = "{:<15} {:<15} {:<15} {:<15} {:<20}".format("Back Shift", "Back Lean", "Head Lean", "Head Shift",
+                                                             "Timestamp")
+        data_log_text = "\n".join([f"{row[0]:<15.2f} {row[1]:<15.2f} {row[2]:<15.2f} {row[3]:<15.2f} {datetime.fromtimestamp(float(row[4])).strftime('%Y-%m-%d %H:%M:%S')}" for row in data])
 
-        scroll_view = ScrollView(size_hint=(1, 0.8), bar_width='10dp')
-        scroll_view.add_widget(data_grid)
+        # Create a scroll view and a box layout for the data log
+        scroll_view = ScrollView(do_scroll_x=False, do_scroll_y=True, size_hint=(1, 0.6), bar_width=10)
+        data_log_layout = BoxLayout(orientation='vertical', size_hint_y=None)
+        data_log_layout.bind(minimum_height=data_log_layout.setter('height'))
+
+        # Add a label for the header and each data row
+        data_log_layout.add_widget(Label(text=header, size_hint_y=None, height=30))
+        for row in data_log_text.split("\n"):
+            data_log_layout.add_widget(Label(text=row, size_hint_y=None, height=30))
+
+        scroll_view.add_widget(data_log_layout)
         layout.add_widget(scroll_view)
-
         layout.add_widget(close_button)
+
         popup = Popup(title='Data Log', content=layout, size_hint=(0.8, 0.8), auto_dismiss=False)
         close_button.bind(on_press=popup.dismiss)
         popup.open()
