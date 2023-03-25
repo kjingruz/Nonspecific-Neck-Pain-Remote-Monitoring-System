@@ -170,7 +170,6 @@ class MainScreen(Screen):
         self.arduino_port = "/dev/cu.usbserial-1120"
         self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         self.scroll_view = None
-        self.datalabel = None
 
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
@@ -194,22 +193,6 @@ class MainScreen(Screen):
         if row:
             self.stagnation_time = row[0]
             self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
-
-        layout = BoxLayout(orientation='vertical')
-
-        # Add a ScrollView to the layout
-        self.scroll_view = ScrollView()
-        layout.add_widget(self.scroll_view)
-
-        # Create a Label to display the serial data
-        self.datalabel = Label(text="No data received yet.", font_size=20)
-
-        # Add the Label to the ScrollView
-        self.scroll_view.add_widget(self.datalabel)
-
-    def update_option(self, spinner, option, value):
-        spinner.text = option.text
-        spinner.dismiss_dropdown()
 
     def show_settings_popup(self):
         content = BoxLayout(orientation='vertical')
@@ -246,14 +229,6 @@ class MainScreen(Screen):
 
         popup.dismiss()
 
-    def stop(self):
-        # close database connection when the screen is destroyed
-        self.conn.close()
-
-    def start_timer(self):
-        self.start_time = Clock.get_time()
-        self.internal_timer = Clock.schedule_interval(self.check_time, 1)
-
     def check_time(self, dt):
         elapsed_time = int(Clock.get_time() - self.start_time)
         if elapsed_time >= self.stagnation_time * 60:
@@ -273,14 +248,10 @@ class MainScreen(Screen):
         self.close_serial_connection()
         Clock.unschedule(self.receive_data)
         self.ids.stop_btn.opacity = 0
-        self.datalabel.text = "Stopped reading data, please view data log to view the data"
+        self.ids.label.text = "Stopped reading data, please view data log to view the data"
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
-
-    def stop_timer(self):
-        if self.internal_timer is not None:
-            self.internal_timer.cancel()
 
     def start(self):
         try:
@@ -295,7 +266,7 @@ class MainScreen(Screen):
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, .1)
-            self.datalabel.text = "Currently reading data"
+            self.ids.label.text = "Currently reading data."
 
         except serial.serialutil.SerialException:
             error_message = "Could not connect \nto the serial port."
@@ -323,14 +294,6 @@ class MainScreen(Screen):
 
         return self.scroll_view
 
-    def show_data_log(self):
-        if not self.serial_port:
-            data_log = '\n'.join([f"{row[0]}, {row[1]}, {row[2]}, {row[3]}, {row[4]}" for row in
-                                  self.sensorcursor.execute("SELECT * FROM sensor_data")])
-            self.ids.label.text = f"Data Log:\n{data_log}"
-        else:
-            self.ids.label.text = "Please stop the serial communication to view the data log."
-
     def open_serial_connection(self):
         if self.serial_port is None:
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
@@ -350,46 +313,54 @@ class MainScreen(Screen):
                         (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp TEXT)''')
         self.sensorconn.commit()
 
-        # Start reading and storing data from Arduino
-        if self.serial_port and self.serial_port.in_waiting > 0:
-            rolling_data = []
-            # Read data from serial port
-            data = self.serial_port.readline().decode().strip().split(',')
-            if len(data) == 4:
-                try:
-                    # Store data in variables and append timestamp
-                    current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
-                    rolling_data.append(current_data)
+        try:
+            # Start reading and storing data from Arduino
+            if self.serial_port and self.serial_port.in_waiting > 0:
+                rolling_data = []
+                # Read data from serial port
+                data = self.serial_port.readline().decode().strip().split(',')
+                if len(data) == 4:
+                    try:
+                        # Store data in variables and append timestamp
+                        current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
+                        rolling_data.append(current_data)
 
-                    # Remove oldest data if rolling average exceeds 10 seconds
-                    while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
-                        rolling_data.pop(0)
+                        # Remove oldest data if rolling average exceeds 10 seconds
+                        while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
+                            rolling_data.pop(0)
 
-                    # Calculate rolling average
-                    avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
-                    avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
-                    avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
-                    avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
+                        # Calculate rolling average
+                        avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
+                        avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
+                        avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
+                        avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
 
-                    # Insert data into SQLite database
-                    self.sensorcursor.execute(
-                        "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
-                        (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
-                    self.sensorconn.commit()
+                        # Insert data into SQLite database
+                        self.sensorcursor.execute(
+                            "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
+                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
+                        self.sensorconn.commit()
 
-                    # Print data for testing purposes
-                    print(
-                        f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
-                except:
-                    self.datalabel.text = "Stopped reading data"
+                        # Print data for testing purposes
+                        print(
+                            f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
+                    except:
+                        self.ids.label.text = "Failed reading data, check connection if you did not intentionally stop it"
 
-            self.sensorcursor.close()
-            self.sensorconn.close()
-
-            # Scroll to the bottom of the ScrollView
-            self.scroll_view.scroll_y = 0
-
-    import datetime
+                self.sensorcursor.close()
+                self.sensorconn.close()
+        except OSError as e:
+            if e.errno == 6:
+                # Handle the error by displaying an error message
+                error_message = "Device not configured.\nPlease check the connection."
+                error_popup = Popup(title="Error",
+                                    content=Label(text=error_message),
+                                    size_hint=(None, None),
+                                    size=(400, 400))
+                okay_button = Button(text='Okay', size_hint=(1, 0.2))
+                okay_button.bind(on_release=error_popup.dismiss)
+                error_popup.content.add_widget(okay_button)
+                error_popup.open()
 
     def create_data_popup(self, data):
         layout = BoxLayout(orientation='vertical')
