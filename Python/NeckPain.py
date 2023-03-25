@@ -311,6 +311,14 @@ class MainScreen(Screen):
             self.serial_port.close()
             self.serial_port = None
 
+    def is_bad_posture(self, avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, threshold=30):
+        return (
+                abs(avg_back_shift) > threshold
+                or abs(avg_back_lean) > threshold
+                or abs(avg_head_lean) > threshold
+                or abs(avg_head_shift) > threshold
+        )
+
     def receive_data(self, dt):
         # Connect to SQLite database
         self.sensorconn = sqlite3.connect('sensor_data.db')
@@ -342,6 +350,10 @@ class MainScreen(Screen):
                         avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
                         avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
                         avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
+
+                        # Check if the posture is bad based on the rolling averages
+                        if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift):
+                            print("Bad posture detected")
 
                         # Insert data into SQLite database
                         self.sensorcursor.execute(
@@ -377,9 +389,9 @@ class MainScreen(Screen):
                 error_popup.content.add_widget(error_label)
 
                 # Create the button and add it to the GridLayout
-                close_button = Button(text='Close', size_hint=(None, None), size=(100, 50))
-                close_button.bind(on_press=error_popup.dismiss)
-                error_popup.content.add_widget(close_button)
+                okay_button = Button(text='Okay', size_hint=(None, None), size=(100, 50))
+                okay_button.bind(on_release=error_popup.dismiss)
+                error_popup.content.add_widget(okay_button)
 
                 error_popup.open()
 
