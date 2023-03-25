@@ -18,7 +18,6 @@ import sqlite3
 import time
 from datetime import datetime
 from plyer import notification
-from datetime import datetime
 
 Builder.load_string('''
 <MyScreenManager>:
@@ -137,7 +136,6 @@ Builder.load_string('''
             Label:
                 id: label
                 text: 'No data received yet.'
-
 ''')
 
 
@@ -167,9 +165,19 @@ class MainScreen(Screen):
         self.internal_timer = None
         self.stagnation_time = 10
         self.start_time = 0
-        self.arduino_port = "/dev/cu.usbserial-1120"
-        self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         self.scroll_view = None
+        self.arduino_port = None
+        self.serial_port = None
+
+        Clock.schedule_once(self.on_kv_post)
+
+    def on_kv_post(self, *args):
+        try:
+            # Open the serial port
+            self.arduino_port = "/dev/cu.usbserial-1120"
+            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+        except serial.serialutil.SerialException as e:
+            self.ids.label.text = "No connection to serial port"
 
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
