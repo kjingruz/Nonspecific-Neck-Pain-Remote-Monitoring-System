@@ -410,9 +410,11 @@ class MainScreen(Screen):
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
                                 most_recent_rolling_average)
                             self.sensorconn.commit()
+                            bad_posture = self.is_bad_posture(most_recent_rolling_average[0], most_recent_rolling_average[1], most_recent_rolling_average[2], most_recent_rolling_average[3])
 
-                            # Update the ScrollView label with the most recent rolling average
-                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f}"
+        # Update the ScrollView label with the most recent rolling average and posture status
+                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f}\nPosture status: {'Bad' if bad_posture else 'Good'}"
+
                     except ValueError:
                         self.ids.status.text = "Failed reading data, please check the data format."
                     except Exception as e:
