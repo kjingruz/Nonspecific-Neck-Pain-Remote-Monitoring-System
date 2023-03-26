@@ -174,7 +174,7 @@ class MainScreen(Screen):
     def on_kv_post(self, *args):
         try:
             # Open the serial port
-            self.arduino_port = "/dev/cu.usbserial-1120"
+            self.arduino_port = "/dev/cu.usbserial-120"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.label.text = "No connection to serial port"
@@ -186,10 +186,6 @@ class MainScreen(Screen):
         # create database connection and cursor
         self.conn = sqlite3.connect('mydatabase.db')
         self.cursor = self.conn.cursor()
-
-        # create table if it doesn't exist
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
-                                      (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
 
         # create table to store stagnation times and dates
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS stagnation_times
@@ -260,6 +256,25 @@ class MainScreen(Screen):
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
+
+    def calculate_rolling_average(self, data, rolling_interval):
+        rolling_data = []
+        rolling_averages = []
+
+        for current_data in data:
+            rolling_data.append(current_data)
+
+            while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > rolling_interval:
+                rolling_data.pop(0)
+
+            avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
+            avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
+            avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
+            avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
+
+            rolling_averages.append((avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
+
+        return rolling_averages
 
     def start(self):
         try:
