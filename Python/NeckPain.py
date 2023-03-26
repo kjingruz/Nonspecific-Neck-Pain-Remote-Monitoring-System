@@ -289,6 +289,11 @@ class MainScreen(Screen):
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, 1)
+            # Schedule the receive_data method to be called every 1 
+
+    # Schedule the check_stagnation method to be called every minute
+            Clock.schedule_interval(self.check_stagnation, 60)
+
             self.ids.status.text = "Currently reading data."
 
         except serial.serialutil.SerialException:
