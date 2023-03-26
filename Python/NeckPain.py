@@ -333,6 +333,35 @@ class MainScreen(Screen):
                 or abs(avg_head_lean) > threshold
                 or abs(avg_head_shift) > threshold
         )
+    def check_stagnation(self, dt):
+    # Calculate the time range to check for stagnation
+        start_time = time.time() - self.stagnation_time * 60
+
+    # Fetch rolling averages within the specified time range
+        self.sensorcursor.execute(
+            "SELECT * FROM rolling_averages WHERE timestamp >= ?",
+            (start_time,))
+        recent_rolling_averages = self.sensorcursor.fetchall()
+
+    # Count the bad postures
+        bad_postures = 0
+        for ra in recent_rolling_averages:
+            if self.is_bad_posture(ra[0], ra[1], ra[2], ra[3]):
+                bad_postures += 1
+
+    # Calculate the percentage of bad postures
+        bad_posture_percentage = (bad_postures / len(recent_rolling_averages)) * 100
+
+    # Check for stagnation and send a notification if necessary
+        if bad_posture_percentage > 50:
+            self.ids.status.color = (1, 0, 0, 1)  # Red color
+            self.ids.status.text += "\nWarning: Stagnation detected!"
+            notification.notify(
+                title='Stagnation Warning',
+                message='More than 50% bad postures detected in the last {} minutes.'.format(self.stagnation_time),
+                app_name=App.get_running_app().title)
+        else:
+            self.ids.status.color = (1, 1, 1, 1)  # White color
 
     def receive_data(self, dt):
         # Connect to SQLite database
