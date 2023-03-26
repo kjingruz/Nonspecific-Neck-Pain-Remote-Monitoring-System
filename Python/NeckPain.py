@@ -134,7 +134,7 @@ Builder.load_string('''
             on_press: root.reset_sensor_data_db()
         ScrollView:
             Label:
-                id: label
+                id: status
                 text: 'No data received yet.'
 ''')
 
@@ -177,7 +177,7 @@ class MainScreen(Screen):
             self.arduino_port = "/dev/cu.usbserial-120"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
-            self.ids.label.text = "No connection to serial port"
+            self.ids.status.text = "No connection to serial port"
 
         # create label to display stagnation time
         self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
@@ -252,7 +252,7 @@ class MainScreen(Screen):
         self.close_serial_connection()
         Clock.unschedule(self.receive_data)
         self.ids.stop_btn.opacity = 0
-        self.ids.label.text = "Stopped reading data, please view data log to view the data"
+        self.ids.status.text += "\n\nStopped reading data, please view data log to view the data"
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
@@ -264,7 +264,7 @@ class MainScreen(Screen):
         for current_data in data:
             rolling_data.append(current_data)
 
-            while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > rolling_interval:
+            while rolling_data and float(rolling_data[-1][4]) - float(rolling_data[0][4]) > rolling_interval:
                 rolling_data.pop(0)
 
             avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
@@ -288,8 +288,8 @@ class MainScreen(Screen):
                 self.ids.start_btn.disabled = True
 
             # Schedule the receive_data method to be called every 0.1 seconds
-            Clock.schedule_interval(self.receive_data, .1)
-            self.ids.label.text = "Currently reading data."
+            Clock.schedule_interval(self.receive_data, 1)
+            self.ids.status.text = "Currently reading data."
 
         except serial.serialutil.SerialException:
             error_message = "Could not connect \nto the serial port."
@@ -341,74 +341,55 @@ class MainScreen(Screen):
 
         # Create table
         self.sensorcursor.execute('''CREATE TABLE IF NOT EXISTS sensor_data
-                        (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp TEXT)''')
+                            (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
+        self.sensorconn.commit()
+
+        # Create rolling_averages table
+        self.sensorcursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
+                            (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
         self.sensorconn.commit()
 
         try:
             # Start reading and storing data from Arduino
             if self.serial_port and self.serial_port.in_waiting > 0:
-                rolling_data = []
                 # Read data from serial port
                 data = self.serial_port.readline().decode().strip().split(',')
                 if len(data) == 4:
                     try:
                         # Store data in variables and append timestamp
                         current_data = [float(data[0]), float(data[1]), float(data[2]), float(data[3]), time.time()]
-                        rolling_data.append(current_data)
-
-                        # Remove oldest data if rolling average exceeds 10 seconds
-                        while rolling_data and rolling_data[-1][4] - rolling_data[0][4] > 10:
-                            rolling_data.pop(0)
-
-                        # Calculate rolling average
-                        avg_back_shift = sum([x[0] for x in rolling_data]) / len(rolling_data)
-                        avg_back_lean = sum([x[1] for x in rolling_data]) / len(rolling_data)
-                        avg_head_lean = sum([x[2] for x in rolling_data]) / len(rolling_data)
-                        avg_head_shift = sum([x[3] for x in rolling_data]) / len(rolling_data)
-
-                        # Check if the posture is bad based on the rolling averages
-                        if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift):
-                            print("Bad posture detected")
 
                         # Insert data into SQLite database
                         self.sensorcursor.execute(
                             "INSERT INTO sensor_data (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
-                            (avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, current_data[4]))
+                            (current_data[0], current_data[1], current_data[2], current_data[3], current_data[4]))
                         self.sensorconn.commit()
 
-                        # Print data for testing purposes
-                        print(
-                            f"Back Shift: {avg_back_shift}, Back Lean: {avg_back_lean}, Head Lean: {avg_head_lean}, Head Shift: {avg_head_shift}")
-                    except:
-                        self.ids.label.text = "Failed reading data, check connection if you did not intentionally stop it"
+                        # Fetch data from the last 10 seconds
+                        self.sensorcursor.execute(
+                            "SELECT * FROM sensor_data WHERE timestamp >= ?",
+                            (time.time() - 10,))
+                        recent_data = self.sensorcursor.fetchall()
 
-                self.sensorcursor.close()
-                self.sensorconn.close()
-        except OSError as e:
-            if e.errno == 6:
-                # Handle the error by displaying an error message
-                error_message = "Device not configured.\nPlease check the connection."
-                error_popup = Popup(title="Error",
-                                    content=GridLayout(cols=1,
-                                                       rows=2,
-                                                       size_hint=(None, None),
-                                                       size=(400, 400),
-                                                       padding=50,
-                                                       spacing=20,
-                                                       ),
-                                    size_hint=(None, None),
-                                    size=(400, 400))
+                        # Calculate the rolling average for the last 10 seconds
+                        rolling_averages = self.calculate_rolling_average(recent_data, 10)
 
-                # Create the Label and add it to the GridLayout
-                error_label = Label(text=error_message, halign='center', valign='middle')
-                error_popup.content.add_widget(error_label)
+                        # Store the most recent rolling average in the database
+                        if rolling_averages:
+                            most_recent_rolling_average = rolling_averages[-1]
+                            self.sensorcursor.execute(
+                                "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
+                                most_recent_rolling_average)
+                            self.sensorconn.commit()
 
-                # Create the button and add it to the GridLayout
-                okay_button = Button(text='Okay', size_hint=(None, None), size=(100, 50))
-                okay_button.bind(on_release=error_popup.dismiss)
-                error_popup.content.add_widget(okay_button)
-
-                error_popup.open()
+                            # Update the ScrollView label with the most recent rolling average
+                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f}"
+                    except ValueError:
+                        self.ids.status.text = "Failed reading data, please check the data format."
+                    except Exception as e:
+                        self.ids.status.text = f"Unexpected error: {e}"
+        except Exception as e:
+            self.ids.status.text = f"Error: {e}"
 
     def create_data_popup(self, data):
         layout = BoxLayout(orientation='vertical')
