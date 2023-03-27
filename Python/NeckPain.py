@@ -172,31 +172,36 @@ class MainScreen(Screen):
         Clock.schedule_once(self.on_kv_post)
 
     def on_kv_post(self, *args):
-        try:
-            # Open the serial port
-            self.arduino_port = "/dev/cu.usbserial-120"
-            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
-        except serial.serialutil.SerialException as e:
-            self.ids.status.text = "No connection to serial port"
+    try:
+        # Open the serial port
+        self.arduino_port = "/dev/cu.usbserial-120"
+        self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+    except serial.serialutil.SerialException as e:
+        self.ids.status.text = "No connection to serial port"
 
-        # create label to display stagnation time
-        self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
-        self.add_widget(self.stagnation_time_label)
+    # create label to display stagnation time
+    self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
+    self.add_widget(self.stagnation_time_label)
 
-        # create database connection and cursor
-        self.conn = sqlite3.connect('mydatabase.db')
-        self.cursor = self.conn.cursor()
+    # create database connection and cursor
+    self.conn = sqlite3.connect('mydatabase.db')
+    self.cursor = self.conn.cursor()
 
-        # create table to store stagnation times and dates
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS stagnation_times
-                                  (id INTEGER PRIMARY KEY, stagnation_time INTEGER, date_time TEXT)''')
+    # create table to store stagnation times and dates
+    self.cursor.execute('''CREATE TABLE IF NOT EXISTS stagnation_times
+                              (id INTEGER PRIMARY KEY, stagnation_time INTEGER, date_time TEXT)''')
 
-        # get the last selected stagnation time from the database
-        self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
-        row = self.cursor.fetchone()
-        if row:
-            self.stagnation_time = row[0]
-            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+    # create table to store settings
+    self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
+                          (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
+
+    # get the last selected stagnation time from the database
+    self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
+    row = self.cursor.fetchone()
+    if row:
+        self.stagnation_time = row[0]
+        self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+
 
     def show_settings_popup(self):
         content = BoxLayout(orientation='vertical')
