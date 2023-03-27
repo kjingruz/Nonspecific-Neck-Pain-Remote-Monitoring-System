@@ -13,13 +13,18 @@ from kivy.lang import Builder
 from kivy.uix.popup import Popup
 
 import serial
+import os
 import serial.tools.list_ports
 import sqlite3
 import time
 from datetime import datetime
 from plyer import notification
 
-Builder.load_string('''
+current_directory = os.path.dirname(os.path.abspath(__file__))
+welcome_background_path = os.path.join(current_directory, '..', 'IMG', 'WelcomeBackground.png')
+login_background_path = os.path.join(current_directory, '..', 'IMG', 'LoginBackground.jpeg')
+
+Builder.load_string(f'''
 <MyScreenManager>:
     WelcomeScreen:
     LoginScreen:
@@ -29,7 +34,7 @@ Builder.load_string('''
     BoxLayout:
         orientation: 'vertical'
         Image:
-            source: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/WelcomeBackground.png'
+            source: '{welcome_background_path}'
             allow_stretch: True
             keep_ratio: False
         Label:
@@ -39,7 +44,7 @@ Builder.load_string('''
         Button:
             text: 'Login'
             size_hint: 0.5, 0.2
-            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+            pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
             on_press: root.enter()
 
 <LoginScreen>:
@@ -47,7 +52,7 @@ Builder.load_string('''
         Rectangle:
             pos: self.pos
             size: self.size
-            source: '/Users/kjingruz/Documents/Nonspecific-Neck-Pain-Remote-Monitoring-System/IMG/LoginBackground.jpeg'
+            source: '{login_background_path}'
     BoxLayout:
         orientation: 'vertical'
         padding: 50
@@ -92,7 +97,7 @@ Builder.load_string('''
                 text: 'Login'
                 size_hint: 0.4, None
                 height: 60
-                pos_hint: {"center_x": 0.5}
+                pos_hint: {{"center_x": 0.5}}
                 font_size: '20sp'
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
