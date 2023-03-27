@@ -172,35 +172,35 @@ class MainScreen(Screen):
         Clock.schedule_once(self.on_kv_post)
 
     def on_kv_post(self, *args):
-    try:
-        # Open the serial port
-        self.arduino_port = "/dev/cu.usbserial-120"
-        self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
-    except serial.serialutil.SerialException as e:
-        self.ids.status.text = "No connection to serial port"
+        try:
+            # Open the serial port
+            self.arduino_port = "/dev/cu.usbserial-120"
+            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+        except serial.serialutil.SerialException as e:
+            self.ids.status.text = "No connection to serial port"
 
-    # create label to display stagnation time
-    self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
-    self.add_widget(self.stagnation_time_label)
+        # create label to display stagnation time
+        self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
+        self.add_widget(self.stagnation_time_label)
 
-    # create database connection and cursor
-    self.conn = sqlite3.connect('mydatabase.db')
-    self.cursor = self.conn.cursor()
+        # create database connection and cursor
+        self.conn = sqlite3.connect('mydatabase.db')
+        self.cursor = self.conn.cursor()
 
-    # create table to store stagnation times and dates
-    self.cursor.execute('''CREATE TABLE IF NOT EXISTS stagnation_times
-                              (id INTEGER PRIMARY KEY, stagnation_time INTEGER, date_time TEXT)''')
+        # create table to store stagnation times and dates
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS stagnation_times
+                                  (id INTEGER PRIMARY KEY, stagnation_time INTEGER, date_time TEXT)''')
 
-    # create table to store settings
-    self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
-                          (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
+        # create table to store settings
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
+                              (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
 
-    # get the last selected stagnation time from the database
-    self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
-    row = self.cursor.fetchone()
-    if row:
-        self.stagnation_time = row[0]
-        self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+        # get the last selected stagnation time from the database
+        self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
+        row = self.cursor.fetchone()
+        if row:
+            self.stagnation_time = row[0]
+            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
 
 
     def show_settings_popup(self):
@@ -294,7 +294,7 @@ class MainScreen(Screen):
 
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, 1)
-            # Schedule the receive_data method to be called every 1 
+            # Schedule the receive_data method to be called every 1
 
     # Schedule the check_stagnation method to be called every minute
             Clock.schedule_interval(self.check_stagnation, 60)
@@ -302,28 +302,7 @@ class MainScreen(Screen):
             self.ids.status.text = "Currently reading data."
 
         except serial.serialutil.SerialException:
-            error_message = "Could not connect \nto the serial port."
-            error_popup = Popup(title="Error",
-                                content=GridLayout(cols=1,
-                                                   rows=2,
-                                                   size_hint=(None, None),
-                                                   size=(400, 400),
-                                                   padding=50,
-                                                   spacing=20,
-                                                   ),
-                                size_hint=(None, None),
-                                size=(400, 400))
-
-            # Create the Label and add it to the GridLayout
-            error_label = Label(text=error_message, halign='center', valign='middle')
-            error_popup.content.add_widget(error_label)
-
-            # Create the button and add it to the GridLayout
-            okay_button = Button(text='Okay', size_hint=(None, None), size=(100, 50))
-            okay_button.bind(on_release=error_popup.dismiss)
-            error_popup.content.add_widget(okay_button)
-
-            error_popup.open()
+            self.show_alert_popup("Could not connect \nto the serial port")
 
         return self.scroll_view
 
@@ -463,20 +442,37 @@ class MainScreen(Screen):
         popup.open()
 
     def load_data_from_db(self):
-        # Connect to SQLite database
-        self.sensorconn = sqlite3.connect('sensor_data.db')
-        self.sensorcursor = self.sensorconn.cursor()
+        try:
+            # Connect to SQLite database
+            self.sensorconn = sqlite3.connect('sensor_data.db')
+            self.sensorcursor = self.sensorconn.cursor()
 
-        # Fetch all data from sensor_data table
-        self.sensorcursor.execute("SELECT * FROM sensor_data")
-        data = self.sensorcursor.fetchall()
+            # Fetch all data from sensor_data table
+            self.sensorcursor.execute("SELECT * FROM sensor_data")
+            data = self.sensorcursor.fetchall()
 
-        # Create and show the data log popup
-        self.create_data_popup(data)
+            # Create and show the data log popup
+            self.create_data_popup(data)
 
-        # Close the cursor and the connection
-        self.sensorcursor.close()
-        self.sensorconn.close()
+            # Close the cursor and the connection
+            self.sensorcursor.close()
+            self.sensorconn.close()
+        except sqlite3.OperationalError:
+            self.show_alert_popup("No data received yet")
+
+    def show_alert_popup(self, message):
+        content = BoxLayout(orientation='vertical')
+        content.add_widget(Label(text=message))
+
+        close_button = Button(text='Close', size_hint=(1, 0.2))
+        close_button.bind(on_press=lambda *args: popup.dismiss())
+        content.add_widget(close_button)
+
+        popup = Popup(title='Alert',
+                      content=content,
+                      size_hint=(None, None),
+                      size=(400, 300))
+        popup.open()
 
     def reset_sensor_data_db(self):
         content = BoxLayout(orientation='vertical')
