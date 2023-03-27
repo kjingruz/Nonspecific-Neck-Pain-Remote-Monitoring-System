@@ -174,7 +174,7 @@ class MainScreen(Screen):
     def on_kv_post(self, *args):
         try:
             # Open the serial port
-            self.arduino_port = "/dev/cu.usbserial-120"
+            self.arduino_port = "/dev/cu.ESP32_SPP"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
