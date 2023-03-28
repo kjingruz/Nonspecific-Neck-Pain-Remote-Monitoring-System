@@ -5,7 +5,6 @@ from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.image import Image
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
@@ -19,6 +18,12 @@ import sqlite3
 import time
 from datetime import datetime
 from plyer import notification
+import objc
+import xlsxwriter
+import subprocess
+
+NSUserNotification = objc.lookUpClass("NSUserNotification")
+NSUserNotificationCenter = objc.lookUpClass("NSUserNotificationCenter")
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 welcome_background_path = os.path.join(current_directory, '..', 'IMG', 'WelcomeBackground.png')
@@ -129,6 +134,7 @@ Builder.load_string(f'''
         Button:
             text: 'Analysis'
             size_hint: (0.2, 0.1)
+            on_press: root.show_analysis_popup()
         Button:
             text: 'Data Log'
             size_hint: (0.2, 0.1)
@@ -141,6 +147,27 @@ Builder.load_string(f'''
             Label:
                 id: status
                 text: 'No data received yet.'
+                
+<AnalysisPopup>:
+    title: "Posture Analysis"
+    size_hint: 0.5, 0.5
+    auto_dismiss: False
+
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: str(round(app.bad_posture_percentage, 2)) + " %"
+            markup: True
+            color: 1, 0, 0, 1
+            font_size: '40sp'
+            bold: True
+        Button:
+            text: "Export graph in excel"
+            on_press:
+                root.export_to_excel()
+        Button:
+            text: "Close"
+            on_press: root.dismiss()
 ''')
 
 
@@ -173,13 +200,15 @@ class MainScreen(Screen):
         self.scroll_view = None
         self.arduino_port = None
         self.serial_port = None
+        self.bad_posture_percentage = 0.00
 
         Clock.schedule_once(self.on_kv_post)
 
     def on_kv_post(self, *args):
         try:
             # Open the serial port
-            self.arduino_port = "/dev/cu.ESP32_SPP"
+            #self.arduino_port = "/dev/cu.ESP32_SPP"
+            self.arduino_port = "/dev/cu.usbserial-120"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
@@ -205,7 +234,7 @@ class MainScreen(Screen):
         row = self.cursor.fetchone()
         if row:
             self.stagnation_time = row[0]
-            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} minute"
 
 
     def show_settings_popup(self):
@@ -242,21 +271,6 @@ class MainScreen(Screen):
         self.conn.commit()
 
         popup.dismiss()
-
-    def check_time(self, dt):
-        elapsed_time = int(Clock.get_time() - self.start_time)
-        if elapsed_time >= self.stagnation_time * 60:
-            # store the date and time when the stagnation time meets the selected_stagnation_time
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.cursor.execute('INSERT INTO stagnation_times (stagnation_time, date_time) VALUES (?, ?)',
-                                (self.stagnation_time, now))
-            self.conn.commit()
-
-            self.internal_timer.cancel()
-            notification.notify(title='Stagnation Time Reached',
-                                message='You have been in the same posture for {} seconds.'.format(
-                                    self.stagnation_time),
-                                app_name=App.get_running_app().title)
 
     def stop_serial(self):
         self.close_serial_connection()
@@ -327,6 +341,54 @@ class MainScreen(Screen):
                 or abs(avg_head_lean) > threshold
                 or abs(avg_head_shift) > threshold
         )
+
+    def send_native_notification(title, message):
+        notification = NSUserNotification.alloc().init()
+        notification.setTitle_(title)
+        notification.setInformativeText_(message)
+        center = NSUserNotificationCenter.defaultUserNotificationCenter()
+        center.deliverNotification_(notification)
+
+    def show_analysis_popup(self):
+        popup = Popup(title="Analysis", size_hint=(0.5, 0.5), auto_dismiss=False)
+        box = BoxLayout(orientation="vertical")
+        label = Label(text=f"Bad posture percentage: {self.bad_posture_percentage:.2f}%", markup=True)
+        label.color = (1, 0, 0, 1)  # Bold red color
+        export_button = Button(text="Export graph in Excel", on_release=self.export_to_excel)
+        close_button = Button(text="Close", on_release=popup.dismiss)
+
+        box.add_widget(label)
+        box.add_widget(export_button)
+        box.add_widget(close_button)
+        popup.add_widget(box)
+        popup.open()
+
+    def export_to_excel(self):
+        workbook = xlsxwriter.Workbook('posture_data_export.xlsx')
+        worksheet = workbook.add_worksheet()
+
+        # Write the headers
+        worksheet.write(0, 0, "Timestamp")
+        worksheet.write(0, 1, "Posture")
+
+        # Fetch all data from rolling_averages table
+        self.sensorcursor.execute("SELECT * FROM rolling_averages")
+        data = self.sensorcursor.fetchall()
+
+        # Write the data to the worksheet
+        for i, row in enumerate(data):
+            timestamp, avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift = row
+            posture = 1 if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift) else 0
+            worksheet.write(i + 1, 0, timestamp)
+            worksheet.write(i + 1, 1, posture)
+
+        workbook.close()
+
+        # Open the exported Excel file
+        subprocess.Popen(['open', 'posture_data_export.xlsx'])
+        #if windows:
+        #os.startfile('posture_data_export.xlsx')
+
     def check_stagnation(self, dt):
     # Calculate the time range to check for stagnation
         start_time = time.time() - self.stagnation_time * 60
@@ -344,16 +406,21 @@ class MainScreen(Screen):
                 bad_postures += 1
 
     # Calculate the percentage of bad postures
-        bad_posture_percentage = (bad_postures / len(recent_rolling_averages)) * 100
+        self.bad_posture_percentage = (bad_postures / len(recent_rolling_averages)) * 100
 
     # Check for stagnation and send a notification if necessary
-        if bad_posture_percentage > 50:
+        if self.bad_posture_percentage > 50:
             self.ids.status.color = (1, 0, 0, 1)  # Red color
             self.ids.status.text += "\nWarning: Stagnation detected!"
-            notification.notify(
-                title='Stagnation Warning',
-                message='More than 50% bad postures detected in the last {} minutes.'.format(self.stagnation_time),
-                app_name=App.get_running_app().title)
+            try:
+                notification.notify(
+                    title='Stagnation Warning',
+                    message='More than 50% bad postures detected in the last {} minutes.'.format(self.stagnation_time),
+                    app_name=App.get_running_app().title)
+            except NotImplementedError:
+                self.send_native_notification('Stagnation Warning',
+                                         'More than 50% bad postures detected in the last {} minutes.'.format(
+                                             self.stagnation_time))
         else:
             self.ids.status.color = (1, 1, 1, 1)  # White color
 
