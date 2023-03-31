@@ -159,7 +159,7 @@ Builder.load_string(f'''
             text: str(round(app.bad_posture_percentage, 2)) + " %"
             markup: True
             color: 1, 0, 0, 1
-            font_size: '40sp'
+            font_size: '80sp'
             bold: True
         Button:
             text: "Export graph in excel"
@@ -201,15 +201,19 @@ class MainScreen(Screen):
         self.arduino_port = None
         self.serial_port = None
         self.bad_posture_percentage = 0.00
+        self.rollingaverageconn = sqlite3.connect(':memory:')
+        self.rollingaveragecursor = self.rollingaverageconn.cursor()
+        self.time = time.time()
 
         Clock.schedule_once(self.on_kv_post)
 
     def on_kv_post(self, *args):
         try:
             # Open the serial port
-            #self.arduino_port = "/dev/cu.ESP32_SPP"
-            self.arduino_port = "/dev/cu.usbserial-120"
-            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
+            self.arduino_port = "/dev/cu.ESP32_SPP"
+            #self.arduino_port = "/dev/cu.usbserial-140"
+            #self.arduino_port = "/dev/cu.Bluetooth-Incoming-Port"
+            self.serial_port = serial.Serial(self.arduino_port, 921600, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
 
@@ -228,6 +232,12 @@ class MainScreen(Screen):
         # create table to store settings
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
                               (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
+
+        self.rollingaverageconn = sqlite3.connect('rollingaverage.db')
+        self.rollingaveragecursor = self.rollingaverageconn.cursor()
+
+        self.rollingaveragecursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
+                                (id INTEGER PRIMARY KEY, rollingaverage INTEGER)''')
 
         # get the last selected stagnation time from the database
         self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
@@ -363,7 +373,7 @@ class MainScreen(Screen):
         popup.add_widget(box)
         popup.open()
 
-    def export_to_excel(self):
+    def export_to_excel(self, *args):
         workbook = xlsxwriter.Workbook('posture_data_export.xlsx')
         worksheet = workbook.add_worksheet()
 
@@ -372,21 +382,22 @@ class MainScreen(Screen):
         worksheet.write(0, 1, "Posture")
 
         # Fetch all data from rolling_averages table
-        self.sensorcursor.execute("SELECT * FROM rolling_averages")
-        data = self.sensorcursor.fetchall()
-
+        self.rollingaveragecursor.execute("SELECT * FROM rolling_averages")
+        data = self.rollingaveragecursor.fetchall()
         # Write the data to the worksheet
         for i, row in enumerate(data):
-            timestamp, avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift = row
+            avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, timestamp = row
             posture = 1 if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift) else 0
             worksheet.write(i + 1, 0, timestamp)
             worksheet.write(i + 1, 1, posture)
 
         workbook.close()
-
         # Open the exported Excel file
         subprocess.Popen(['open', 'posture_data_export.xlsx'])
-        #if windows:
+
+    # Code to handle the exception
+
+    #if windows:
         #os.startfile('posture_data_export.xlsx')
 
     def check_stagnation(self, dt):
@@ -394,10 +405,10 @@ class MainScreen(Screen):
         start_time = time.time() - self.stagnation_time * 60
 
     # Fetch rolling averages within the specified time range
-        self.sensorcursor.execute(
+        self.rollingaveragecursor.execute(
             "SELECT * FROM rolling_averages WHERE timestamp >= ?",
             (start_time,))
-        recent_rolling_averages = self.sensorcursor.fetchall()
+        recent_rolling_averages = self.rollingaveragecursor.fetchall()
 
     # Count the bad postures
         bad_postures = 0
@@ -434,11 +445,6 @@ class MainScreen(Screen):
                             (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
         self.sensorconn.commit()
 
-        # Create rolling_averages table
-        self.sensorcursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
-                            (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
-        self.sensorconn.commit()
-
         try:
             # Start reading and storing data from Arduino
             if self.serial_port and self.serial_port.in_waiting > 0:
@@ -467,10 +473,10 @@ class MainScreen(Screen):
                         # Store the most recent rolling average in the database
                         if rolling_averages:
                             most_recent_rolling_average = rolling_averages[-1]
-                            self.sensorcursor.execute(
+                            self.rollingaveragecursor.execute(
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
                                 most_recent_rolling_average)
-                            self.sensorconn.commit()
+                            self.rollingaverageconn.commit()
                             bad_posture = self.is_bad_posture(most_recent_rolling_average[0], most_recent_rolling_average[1], most_recent_rolling_average[2], most_recent_rolling_average[3])
 
         # Update the ScrollView label with the most recent rolling average and posture status
@@ -570,19 +576,27 @@ class MainScreen(Screen):
     def perform_reset(self, popup):
         # Connect to SQLite database
         self.sensorconn = sqlite3.connect('sensor_data.db')
+        self.rollingaverageconn = sqlite3.connect('rollingaverage.db')
         self.sensorcursor = self.sensorconn.cursor()
+        self.rollingaveragecursor = self.rollingaverageconn.cursor()
 
         # Delete all data from sensor_data table
         self.sensorcursor.execute("DELETE FROM sensor_data")
+        self.rollingaverageconn.execute("DELETE FROM rolling_averages")
         self.sensorconn.commit()
+        self.rollingaverageconn.commit()
 
         # Optimize the database
         self.sensorcursor.execute("VACUUM")
+        self.rollingaveragecursor.execute("VACUUM")
         self.sensorconn.commit()
+        self.rollingaverageconn.commit()
 
         # Close the cursor and the connection
         self.sensorcursor.close()
+        self.rollingaveragecursor.close()
         self.sensorconn.close()
+        self.rollingaverageconn.close()
 
         # Dismiss the popup
         popup.dismiss()
