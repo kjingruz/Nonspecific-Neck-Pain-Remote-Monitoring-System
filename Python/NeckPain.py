@@ -210,10 +210,10 @@ class MainScreen(Screen):
     def on_kv_post(self, *args):
         try:
             # Open the serial port
-            self.arduino_port = "/dev/cu.ESP32_SPP"
-            #self.arduino_port = "/dev/cu.usbserial-140"
+            #self.arduino_port = "/dev/cu.ESP32_SPP"
+            self.arduino_port = "/dev/cu.usbserial-130"
             #self.arduino_port = "/dev/cu.Bluetooth-Incoming-Port"
-            self.serial_port = serial.Serial(self.arduino_port, 921600, timeout=1)
+            self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
 
@@ -384,6 +384,7 @@ class MainScreen(Screen):
         # Fetch all data from rolling_averages table
         self.rollingaveragecursor.execute("SELECT * FROM rolling_averages")
         data = self.rollingaveragecursor.fetchall()
+
         # Write the data to the worksheet
         for i, row in enumerate(data):
             avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, timestamp = row
@@ -391,7 +392,26 @@ class MainScreen(Screen):
             worksheet.write(i + 1, 0, timestamp)
             worksheet.write(i + 1, 1, posture)
 
+        # Create a new line chart
+        chart = workbook.add_chart({'type': 'line'})
+
+        # Configure the chart to use the data from the worksheet
+        chart.add_series({
+            'name': 'Posture',
+            'categories': f'=Sheet1!$A$2:$A${i + 2}',
+            'values': f'=Sheet1!$B$2:$B${i + 2}',
+        })
+
+        # Set the chart's title, x-axis, and y-axis names
+        chart.set_title({'name': 'Posture Over Time'})
+        chart.set_x_axis({'name': 'Timestamp'})
+        chart.set_y_axis({'name': 'Posture'})
+
+        # Insert the chart into the worksheet
+        worksheet.insert_chart('D2', chart)
+
         workbook.close()
+
         # Open the exported Excel file
         subprocess.Popen(['open', 'posture_data_export.xlsx'])
 
