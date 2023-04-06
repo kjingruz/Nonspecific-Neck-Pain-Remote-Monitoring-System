@@ -39,14 +39,14 @@ void setup() {
 }
 
 void loop() {
-  sensors_event_t Back_Sensor;
   sensors_event_t Head_Sensor;
-  bno1.getEvent(&Back_Sensor);
-  float back_shift = -Back_Sensor.orientation.y;
-  float back_lean = Back_Sensor.orientation.z + 90;
-  bno2.getEvent(&Head_Sensor);
-  float head_lean = -Head_Sensor.orientation.y;
-  float head_shift = -Head_Sensor.orientation.z;
+  sensors_event_t Back_Sensor;
+  bno1.getEvent(&Head_Sensor);
+  float head_lean = Head_Sensor.orientation.y;
+  float head_shift = Head_Sensor.orientation.z;
+  bno2.getEvent(&Back_Sensor);
+  float back_lean = Back_Sensor.orientation.y;
+  float back_shift = Back_Sensor.orientation.z+90;
 
   String data = String(back_shift, 4) + "," + String(back_lean, 4) + "," + String(head_lean, 4) + "," + String(head_shift, 4);
   Serial.println(data);
