@@ -211,7 +211,7 @@ class MainScreen(Screen):
         try:
             # Open the serial port
             #self.arduino_port = "/dev/cu.ESP32_SPP"
-            self.arduino_port = "/dev/cu.usbserial-130"
+            self.arduino_port = "/dev/cu.usbserial-120"
             #self.arduino_port = "/dev/cu.Bluetooth-Incoming-Port"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
@@ -286,7 +286,7 @@ class MainScreen(Screen):
         self.close_serial_connection()
         Clock.unschedule(self.receive_data)
         self.ids.stop_btn.opacity = 0
-        self.ids.status.text += "\n\nStopped reading data, please view data log to view the data"
+        self.ids.status.text += "\n\nStopped reading data, please go to data log to view the data, \n or `Export graph in excel` to export the data to excel."
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
@@ -379,7 +379,8 @@ class MainScreen(Screen):
 
         # Write the headers
         worksheet.write(0, 0, "Timestamp")
-        worksheet.write(0, 1, "Posture")
+        worksheet.write(0, 1, "Good Posture")
+        worksheet.write(0, 2, "Bad Posture")
 
         # Fetch all data from rolling_averages table
         self.rollingaveragecursor.execute("SELECT * FROM rolling_averages")
@@ -390,16 +391,29 @@ class MainScreen(Screen):
             avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, timestamp = row
             posture = 1 if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift) else 0
             worksheet.write(i + 1, 0, timestamp)
-            worksheet.write(i + 1, 1, posture)
+            if posture == 0:
+                worksheet.write(i + 1, 1, 0)
+                worksheet.write(i + 1, 2, None)
+            else:
+                worksheet.write(i + 1, 1, None)
+                worksheet.write(i + 1, 2, 1)
 
         # Create a new line chart
         chart = workbook.add_chart({'type': 'line'})
 
         # Configure the chart to use the data from the worksheet
         chart.add_series({
-            'name': 'Posture',
+            'name': 'Good Posture',
             'categories': f'=Sheet1!$A$2:$A${i + 2}',
             'values': f'=Sheet1!$B$2:$B${i + 2}',
+            'line': {'color': 'red'},
+        })
+
+        chart.add_series({
+            'name': 'Bad Posture',
+            'categories': f'=Sheet1!$A$2:$A${i + 2}',
+            'values': f'=Sheet1!$C$2:$C${i + 2}',
+            'line': {'color': 'green'},
         })
 
         # Set the chart's title, x-axis, and y-axis names
