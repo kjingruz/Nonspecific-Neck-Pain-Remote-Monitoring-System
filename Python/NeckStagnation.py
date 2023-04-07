@@ -114,6 +114,7 @@ Builder.load_string(f'''
 
 <MainScreen>:
     BoxLayout:
+        id: main_layout
         orientation: 'vertical'
         Button:
             id: start_btn
@@ -203,7 +204,9 @@ class MainScreen(Screen):
         self.bad_posture_percentage = 0.00
         self.rollingaverageconn = sqlite3.connect(':memory:')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
-        self.time = time.time()
+        self.threshold_timer = None
+        self.threshold_exceeded_event = None
+        self.threshold = 15
 
         Clock.schedule_once(self.on_kv_post)
 
@@ -218,8 +221,8 @@ class MainScreen(Screen):
             self.ids.status.text = "No connection to serial port"
 
         # create label to display stagnation time
-        self.stagnation_time_label = Label(text="Stagnation Time: seconds", size_hint=(1, 0.1))
-        self.add_widget(self.stagnation_time_label)
+        self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
+        self.ids.main_layout.add_widget(self.stagnation_time_label)  # Add the label to the main_layout
 
         # create database connection and cursor
         self.conn = sqlite3.connect('mydatabase.db')
@@ -237,21 +240,20 @@ class MainScreen(Screen):
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
 
         self.rollingaveragecursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
-                                (id INTEGER PRIMARY KEY, rollingaverage INTEGER)''')
+                                (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
 
         # get the last selected stagnation time from the database
         self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
         row = self.cursor.fetchone()
         if row:
             self.stagnation_time = row[0]
-            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} minute"
-
+            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
 
     def show_settings_popup(self):
         content = BoxLayout(orientation='vertical')
 
         stagnation_time_dropdown = CustomSpinner(size_hint=(1, 0.2))
-        stagnation_time_dropdown.values = ['5', '10', '15', '20', '25']
+        stagnation_time_dropdown.values = ['10', '15', '20', '25', '30', '35', '40', '45', '50', '55', '60']
 
         confirm_button = Button(text='Confirm', size_hint=(1, 0.2))
 
@@ -281,6 +283,15 @@ class MainScreen(Screen):
         self.conn.commit()
 
         popup.dismiss()
+
+    def threshold_exceeded(self, rolling_average, threshold):
+        for i in range(4):
+            if abs(rolling_average[i]) > threshold:
+                return True
+        return False
+
+    def timer_callback(self, dt):
+        self.ids.status.text += "\nError: Threshold not exceeded for the selected time."
 
     def stop_serial(self):
         self.close_serial_connection()
@@ -507,15 +518,15 @@ class MainScreen(Screen):
                         # Store the most recent rolling average in the database
                         if rolling_averages:
                             most_recent_rolling_average = rolling_averages[-1]
+                            if self.threshold_exceeded(most_recent_rolling_average, self.threshold):
+                                if self.threshold_timer:
+                                    self.threshold_timer.cancel()
+                                self.threshold_timer = Clock.schedule_once(self.timer_callback, self.stagnation_time)
                             self.rollingaveragecursor.execute(
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
                                 most_recent_rolling_average)
                             self.rollingaverageconn.commit()
-                            bad_posture = self.is_bad_posture(most_recent_rolling_average[0], most_recent_rolling_average[1], most_recent_rolling_average[2], most_recent_rolling_average[3])
 
-        # Update the ScrollView label with the most recent rolling average and posture status
-                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f}"
-                            #\nPosture status: {'Bad' if bad_posture else 'Good'}
                     except ValueError:
                         self.ids.status.text = "Failed reading data, please check the data format."
                     except Exception as e:
