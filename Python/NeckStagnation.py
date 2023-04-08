@@ -119,34 +119,31 @@ Builder.load_string(f'''
         Button:
             id: start_btn
             text: 'Start'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.start()
         Button:
             id: stop_btn
             text: 'Stop'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.stop_serial()
             opacity: 0
             disabled: True
         Button:
             text: 'Setting'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.show_settings_popup()
         Button:
             text: 'Analysis'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.show_analysis_popup()
         Button:
             text: 'Data Log'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.load_data_from_db()
         Button:
             text: 'Clear Data'
-            size_hint: (0.2, 0.1)
+            size_hint: (0.2, 0.3)
             on_press: root.reset_sensor_data_db()
-        BoxLayout:
-            id: move_label_box
-            size_hint: (1, 0.1)
         ScrollView:
             Label:
                 id: status
@@ -208,12 +205,12 @@ class MainScreen(Screen):
         self.rollingaverageconn = sqlite3.connect(':memory:')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
         self.prev_rolling_average = None  # Add this line to initialize the prev_rolling_average attribute
-        self.move_label = None
         self.threshold_timer = None
         self.threshold_exceeded_event = None
         self.no_movement_time = 0
         self.threshold = 15
         self.timer_active = False
+        self.check_stagnation_event = None  # Add this line to store the check_stagnation event
 
         Clock.schedule_once(self.on_kv_post)
 
@@ -227,16 +224,12 @@ class MainScreen(Screen):
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
 
-        # create label to display stagnation time
-        self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
-        self.ids.main_layout.add_widget(self.stagnation_time_label)  # Add the label to the main_layout
-
-        self.move_label = Label(size_hint=(1, 0.1), text='', font_size='50sp', color=(1, 0, 0, 1), bold=True)
-        self.ids.move_label_box.add_widget(self.move_label)  # Add the move_label to the placeholder
-
         self.threshold_timer_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
-        self.ids.main_layout.add_widget(self.threshold_timer_label)
 
+        scroll_view_and_labels = BoxLayout(orientation='vertical', size_hint_y=None)
+        scroll_view_and_labels.add_widget(self.threshold_timer_label)
+
+        self.ids.main_layout.add_widget(scroll_view_and_labels)
 
         Clock.schedule_interval(self.update_no_movement_time, 0.1)
 
@@ -266,8 +259,16 @@ class MainScreen(Screen):
         self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
         row = self.cursor.fetchone()
         if row:
+            # create label to display stagnation time
             self.stagnation_time = row[0]
+            self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
             self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
+            scroll_view_and_labels.add_widget(self.stagnation_time_label)
+        else:
+            self.stagnation_time = 10
+            self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
+            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
+            scroll_view_and_labels.add_widget(self.stagnation_time_label)
 
     def show_settings_popup(self):
         content = BoxLayout(orientation='vertical')
@@ -334,6 +335,9 @@ class MainScreen(Screen):
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
         self.timer_active = False  # Set the timer_active flag to False
+        if self.check_stagnation_event:  # Check if the event exists
+            Clock.unschedule(self.check_stagnation_event)  # Unschedule the check_stagnation event
+            self.check_stagnation_event = None  # Reset the event to None
 
     def calculate_rolling_average(self, data, rolling_interval):
         rolling_data = []
@@ -372,7 +376,8 @@ class MainScreen(Screen):
             # Schedule the receive_data method to be called every 1
 
     # Schedule the check_stagnation method to be called every minute
-            Clock.schedule_interval(self.check_stagnation, 1)  # Call the check_stagnation function every second
+            if self.timer_active:
+                self.check_stagnation_event = Clock.schedule_interval(self.check_stagnation, 5)  # Store the event
 
             self.ids.status.text = "Currently reading data."
 
@@ -466,18 +471,18 @@ class MainScreen(Screen):
         #os.startfile('posture_data_export.xlsx')
 
     def check_stagnation(self, dt):
-        if self.no_movement_time >= self.stagnation_time:
-            self.move_label.text = 'MOVE'
-            self.store_no_movement_time()
-        else:
-            self.move_label.text = ''
+        with self.conn:
+            cursor = self.conn.cursor()
 
-        # Update the longest no_movement_time and its datetime
-        self.cursor.execute('SELECT MAX(no_movement_time), date_time FROM no_movement_times')
-        row = self.cursor.fetchone()
-        if row:
-            self.longest_no_movement_time, self.longest_datetime = row
-            # You can use these variables or display them as needed
+            if self.no_movement_time >= self.stagnation_time:
+                self.show_alert_popup('PLEASE MOVE AROUND.')
+                self.store_no_movement_time()
+
+            # Update the longest no_movement_time and its datetime
+            cursor.execute('SELECT MAX(no_movement_time), date_time FROM no_movement_times')
+            row = cursor.fetchone()
+            if row:
+                self.longest_no_movement_time, self.longest_datetime = row
 
     def store_no_movement_time(self):
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -527,10 +532,10 @@ class MainScreen(Screen):
                                 if self.threshold_timer:
                                     self.threshold_timer.cancel()
                                 self.threshold_timer = Clock.schedule_once(self.timer_callback, self.stagnation_time)
-                                self.move_label.text = ''
                                 self.no_movement_time = 0  # Reset the no_movement_time to 0
                             else:
-                                self.move_label.text = 'MOVE'
+                                #self.show_alert_popup('YOU HAVE BEEN STATIONARY FOR TOO LONG. PLEASE MOVE AROUND.')
+                                pass
                             self.rollingaveragecursor.execute(
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
                                 most_recent_rolling_average)
@@ -630,29 +635,35 @@ class MainScreen(Screen):
         confirm_reset_popup.open()
 
     def perform_reset(self, popup):
-        # Connect to SQLite database
+        # Connect to SQLite databases
+        self.conn = sqlite3.connect('mydatabase.db')
         self.sensorconn = sqlite3.connect('sensor_data.db')
         self.rollingaverageconn = sqlite3.connect('rollingaverage.db')
+
+        self.cursor = self.conn.cursor()
         self.sensorcursor = self.sensorconn.cursor()
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
 
-        # Delete all data from sensor_data table
+        # Delete all data from the tables in all databases
+        self.cursor.execute("DELETE FROM stagnation_times")
+        self.cursor.execute("DELETE FROM settings")
+        self.cursor.execute("DELETE FROM no_movement_times")
         self.sensorcursor.execute("DELETE FROM sensor_data")
-        self.rollingaverageconn.execute("DELETE FROM rolling_averages")
+        self.rollingaveragecursor.execute("DELETE FROM rolling_averages")
+
+        self.conn.commit()
         self.sensorconn.commit()
         self.rollingaverageconn.commit()
 
-        # Optimize the database
+        # Optimize the databases
+        self.cursor.execute("VACUUM")
         self.sensorcursor.execute("VACUUM")
         self.rollingaveragecursor.execute("VACUUM")
+
+        self.conn.commit()
         self.sensorconn.commit()
         self.rollingaverageconn.commit()
 
-        # Close the cursor and the connection
-        self.sensorcursor.close()
-        self.rollingaveragecursor.close()
-        self.sensorconn.close()
-        self.rollingaverageconn.close()
 
         # Dismiss the popup
         popup.dismiss()
