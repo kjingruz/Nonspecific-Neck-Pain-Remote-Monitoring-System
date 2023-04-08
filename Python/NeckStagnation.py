@@ -122,7 +122,7 @@ Builder.load_string(f'''
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
                 on_press: root.cancel()
-                
+
 <LoginScreen>:
     canvas.before:
         Rectangle:
@@ -270,6 +270,7 @@ class WelcomeScreen(Screen):
     def register(self):
         screen_manager.current = 'register'
 
+
 class RegisterScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -278,6 +279,7 @@ class RegisterScreen(Screen):
 
         self.c.execute('''CREATE TABLE IF NOT EXISTS users
                      (username TEXT PRIMARY KEY, password TEXT)''')
+
     def register_user(self, username, password):
 
         if not username or not password:
@@ -292,8 +294,10 @@ class RegisterScreen(Screen):
                 screen_manager.current = 'login'
             except sqlite3.IntegrityError:
                 self.add_widget(Label(text='Username already exists'))
+
     def cancel(self):
         screen_manager.current = 'welcome'
+
 
 class LoginScreen(Screen):
     def __init__(self, **kwargs):
@@ -304,6 +308,7 @@ class LoginScreen(Screen):
         self.c.execute('''CREATE TABLE IF NOT EXISTS users
                      (username TEXT PRIMARY KEY NOT NULL, password TEXT NOT NULL)''')
         self.conn.commit()
+
     def login(self):
         username = self.ids.username.text
         password = self.ids.password.text
@@ -345,7 +350,7 @@ class MainScreen(Screen):
 
     def on_kv_post(self, *args):
         try:
-            self.arduino_port = "/dev/cu.usbserial-120"
+            self.arduino_port = "/dev/cu.usbserial-1120"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
@@ -430,17 +435,23 @@ class MainScreen(Screen):
 
         popup.dismiss()
 
-    def threshold_exceeded(self, rolling_average, threshold):
-        if self.prev_rolling_average is None:
-            self.prev_rolling_average = rolling_average
+    def threshold_exceeded(self, recent_data, threshold, stagnation_time):
+        if len(recent_data) < 2:
             return False
 
-        for i in range(4):
-            if abs(rolling_average[i] - self.prev_rolling_average[i]) > threshold:
-                self.prev_rolling_average = rolling_average
-                return True
+        # Find the index of the oldest data point within the stagnation_time
+        oldest_data_index = 0
+        for i, data in enumerate(recent_data[:-1]):
+            if data[4] >= recent_data[-1][4] - stagnation_time:
+                oldest_data_index = i
+                break
 
-        self.prev_rolling_average = rolling_average
+        # Check if any of the entries within the stagnation_time are different by the threshold amount of degrees
+        for i in range(oldest_data_index, len(recent_data) - 1):
+            for j in range(4):
+                if abs(recent_data[i + 1][j] - recent_data[i][j]) > threshold:
+                    return True
+
         return False
 
     def timer_callback(self, dt):
@@ -491,10 +502,10 @@ class MainScreen(Screen):
 
                 self.timer_active = True  # Set the timer_active flag to True
 
-            Clock.schedule_interval(self.receive_data, 1)
+            Clock.schedule_interval(self.receive_data, 0.1)
             # Schedule the receive_data method to be called every 1
 
-    # Schedule the check_stagnation method to be called every minute
+            # Schedule the check_stagnation method to be called every minute
             if self.timer_active:
                 self.check_stagnation_event = Clock.schedule_interval(self.check_stagnation, 1)  # Store the event
 
@@ -518,7 +529,7 @@ class MainScreen(Screen):
 
     def show_analysis_popup(self):
         # Update the longest no_movement_time and its datetime if the current no_movement_time is larger
-        if self.no_movement_time > self.longest_no_movement_time:
+        if self.longest_no_movement_time is None or self.no_movement_time > self.longest_no_movement_time:
             self.longest_no_movement_time = self.no_movement_time
             self.longest_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self.store_no_movement_time()  # Store the updated longest no_movement_time in the database
@@ -610,8 +621,8 @@ class MainScreen(Screen):
 
     # Code to handle the exception
 
-    #if windows:
-        #os.startfile('posture_data_export.xlsx')
+    # if windows:
+    # os.startfile('posture_data_export.xlsx')
 
     def check_stagnation(self, dt):
         with self.conn:
@@ -621,6 +632,8 @@ class MainScreen(Screen):
                 current_time = time.time()
                 if current_time - self.last_popup_time >= 5:
                     self.show_alert_popup('PLEASE MOVE AROUND.')
+                    print(self.stagnation_time)
+                    print(self.no_movement_time)
                     self.store_no_movement_time()
                     self.last_popup_time = current_time
 
@@ -674,18 +687,19 @@ class MainScreen(Screen):
                         recent_data = self.sensorcursor.fetchall()
 
                         # Calculate the rolling average for the last 10 seconds
-                        rolling_averages = self.calculate_rolling_average(recent_data, 10)
+                        rolling_averages = self.calculate_rolling_average(recent_data, 1)
 
                         # Store the most recent rolling average in the database
                         if rolling_averages:
                             most_recent_rolling_average = rolling_averages[-1]
-                            if self.threshold_exceeded(most_recent_rolling_average, self.threshold):
+                            if self.threshold_exceeded(recent_data, self.threshold, self.stagnation_time):
                                 if self.threshold_timer:
                                     self.threshold_timer.cancel()
                                 self.threshold_timer = Clock.schedule_once(self.timer_callback, self.stagnation_time)
                                 self.no_movement_time = 0  # Reset the no_movement_time to 0
+
                             else:
-                                #self.show_alert_popup('YOU HAVE BEEN STATIONARY FOR TOO LONG. PLEASE MOVE AROUND.')
+                                # self.show_alert_popup('YOU HAVE BEEN STATIONARY FOR TOO LONG. PLEASE MOVE AROUND.')
                                 pass
                             self.rollingaveragecursor.execute(
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -710,8 +724,8 @@ class MainScreen(Screen):
         header = "{:<15} {:<15} {:<15} {:<15} {:<20}".format("Back Shift", "Back Lean", "Head Lean", "Head Shift",
                                                              "Timestamp")
         data_log_text = "\n".join([
-                                      f"{row[0]:<15.2f} {row[1]:<15.2f} {row[2]:<15.2f} {row[3]:<15.2f} {datetime.fromtimestamp(float(row[4])).strftime('%Y-%m-%d %H:%M:%S')}"
-                                      for row in data])
+            f"{row[0]:<15.2f} {row[1]:<15.2f} {row[2]:<15.2f} {row[3]:<15.2f} {datetime.fromtimestamp(float(row[4])).strftime('%Y-%m-%d %H:%M:%S')}"
+            for row in data])
 
         # Create a scroll view and a box layout for the data log
         scroll_view = ScrollView(do_scroll_x=False, do_scroll_y=True, size_hint=(1, 0.6), bar_width=10)
@@ -833,8 +847,6 @@ screen_manager.add_widget(WelcomeScreen(name='welcome'))
 screen_manager.add_widget(RegisterScreen(name='register'))
 screen_manager.add_widget(LoginScreen(name='login'))
 screen_manager.add_widget(MainScreen(name='main'))
-
-
 
 
 class NeckPainApp(App):
