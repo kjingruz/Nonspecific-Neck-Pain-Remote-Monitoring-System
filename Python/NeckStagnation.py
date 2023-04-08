@@ -116,39 +116,59 @@ Builder.load_string(f'''
     BoxLayout:
         id: main_layout
         orientation: 'vertical'
-        Button:
-            id: start_btn
-            text: 'Start'
-            size_hint: (0.2, 0.3)
-            on_press: root.start()
-        Button:
-            id: stop_btn
-            text: 'Stop'
-            size_hint: (0.2, 0.3)
-            on_press: root.stop_serial()
-            opacity: 0
-            disabled: True
-        Button:
-            text: 'Setting'
-            size_hint: (0.2, 0.3)
-            on_press: root.show_settings_popup()
-        Button:
-            text: 'Analysis'
-            size_hint: (0.2, 0.3)
-            on_press: root.show_analysis_popup()
-        Button:
-            text: 'Data Log'
-            size_hint: (0.2, 0.3)
-            on_press: root.load_data_from_db()
-        Button:
-            text: 'Clear Data'
-            size_hint: (0.2, 0.3)
-            on_press: root.reset_sensor_data_db()
+        Label:
+            text: 'Neck Stagnation'
+            size_hint: 1, 0.1
+            font_size: '35sp'
+            bold: True
+            color: (0, 1, 0, 1)
+        Label:
+            text: 'Welcome, '
+            size_hint: 1, 0.1
+            font_size: '20sp'
+            color: (0, 1, 0, 1)
+        Label:
+            id: stagnation_label
+            text: 'Stagnation Time: 10 Seconds'
+            size_hint: 1, 0.1
+            font_size: '20sp'
+            color: (0, 1, 1, 1)
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 1, 1
+            Button:
+                id: start_btn
+                text: 'Start'
+                size_hint: (0.2, 1.5)
+                on_press: root.start()
+            Button:
+                id: stop_btn
+                text: 'Stop'
+                size_hint: (0.2, 1.5)
+                on_press: root.stop_serial()
+                opacity: 0
+                disabled: True
+            Button:
+                text: 'Setting'
+                size_hint: (0.2, 1.5)
+                on_press: root.show_settings_popup()
+            Button:
+                text: 'Analysis'
+                size_hint: (0.2, 1.5)
+                on_press: root.show_analysis_popup()
+            Button:
+                text: 'Data Log'
+                size_hint: (0.2, 1.5)
+                on_press: root.load_data_from_db()
+            Button:
+                text: 'Clear Data'
+                size_hint: (0.2, 1.5)
+                on_press: root.reset_sensor_data_db()
         ScrollView:
             Label:
                 id: status
                 text: 'No data received yet.'
-                
+
 <AnalysisPopup>:
     title: "Posture Analysis"
     size_hint: 0.5, 0.5
@@ -195,21 +215,19 @@ class CustomSpinner(Spinner):
 class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.internal_timer = None
         self.stagnation_time = 10
-        self.start_time = 0
         self.scroll_view = None
         self.arduino_port = None
         self.serial_port = None
         self.rollingaverageconn = sqlite3.connect(':memory:')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
-        self.prev_rolling_average = None  # Add this line to initialize the prev_rolling_average attribute
+        self.prev_rolling_average = None
         self.threshold_timer = None
         self.threshold_exceeded_event = None
         self.no_movement_time = 0
         self.threshold = 15
         self.timer_active = False
-        self.check_stagnation_event = None  # Add this line to store the check_stagnation event
+        self.check_stagnation_event = None
         self.longest_datetime = None
         self.longest_no_movement_time = 0
         self.last_popup_time = 0
@@ -218,10 +236,7 @@ class MainScreen(Screen):
 
     def on_kv_post(self, *args):
         try:
-            # Open the serial port
-            #self.arduino_port = "/dev/cu.ESP32_SPP"
             self.arduino_port = "/dev/cu.usbserial-1120"
-            #self.arduino_port = "/dev/cu.Bluetooth-Incoming-Port"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
@@ -256,21 +271,15 @@ class MainScreen(Screen):
         self.rollingaveragecursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
                                 (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
 
-
         # get the last selected stagnation time from the database
         self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
         row = self.cursor.fetchone()
         if row:
-            # create label to display stagnation time
             self.stagnation_time = row[0]
-            self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
-            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
-            scroll_view_and_labels.add_widget(self.stagnation_time_label)
+            self.ids.stagnation_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
         else:
             self.stagnation_time = 10
-            self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
-            self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
-            scroll_view_and_labels.add_widget(self.stagnation_time_label)
+            self.ids.stagnation_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
 
     def show_settings_popup(self):
         content = BoxLayout(orientation='vertical')
@@ -304,7 +313,7 @@ class MainScreen(Screen):
         self.stagnation_time = int(selected_stagnation_time)
 
         # update label with selected stagnation time
-        self.stagnation_time_label.text = f"Stagnation Time: {self.stagnation_time} seconds"
+        self.ids.stagnation_label.text = f"Stagnation Time: {self.stagnation_time} Seconds"
 
         # store the selected stagnation time in the database
         self.cursor.execute('INSERT INTO settings (stagnation_time) VALUES (?)', (self.stagnation_time,))
