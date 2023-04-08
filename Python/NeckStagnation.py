@@ -1,6 +1,5 @@
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
@@ -17,13 +16,8 @@ import serial.tools.list_ports
 import sqlite3
 import time
 from datetime import datetime
-from plyer import notification
-import objc
 import xlsxwriter
 import subprocess
-
-NSUserNotification = objc.lookUpClass("NSUserNotification")
-NSUserNotificationCenter = objc.lookUpClass("NSUserNotificationCenter")
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 welcome_background_path = os.path.join(current_directory, '..', 'IMG', 'WelcomeBackground.png')
@@ -32,6 +26,13 @@ login_background_path = os.path.join(current_directory, '..', 'IMG', 'LoginBackg
 Builder.load_string(f'''
 <MyScreenManager>:
     WelcomeScreen:
+    RegisterScreen:
+    LoginScreen:
+    MainScreen:
+
+<MyScreenManager>:
+    WelcomeScreen:
+    RegisterScreen:
     LoginScreen:
     MainScreen:
 
@@ -51,7 +52,77 @@ Builder.load_string(f'''
             size_hint: 0.5, 0.2
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
             on_press: root.enter()
+        Button:
+            text: 'Register'
+            size_hint: 0.5, 0.2
+            pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
+            on_press: root.register()
 
+<RegisterScreen>:
+    canvas.before:
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            source: '{login_background_path}'
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 50
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 1, 0.8
+            spacing: 10
+            padding: 10
+            Label:
+                text: 'Username:'
+                font_size: '20sp'
+                size_hint: None, None
+                size: self.texture_size
+                color: (0,0,0,1)
+            TextInput:
+                id: reg_username
+                multiline: False
+                size_hint: 0.8, None
+                height: 40
+                font_size: '20sp'
+                background_color: (1, 1, 1, 0.7)
+            Label:
+                text: 'Password:'
+                font_size: '20sp'
+                size_hint: None, None
+                size: self.texture_size
+                color: (0,0,0,1)
+            TextInput:
+                id: reg_password
+                multiline: False
+                password: True
+                size_hint: 0.8, None
+                height: 40
+                font_size: '20sp'
+                background_color: (1, 1, 1, 0.7)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: 1, 0.2
+            spacing: 20
+            padding: 10
+            Button:
+                text: 'Register'
+                size_hint: 0.4, None
+                height: 60
+                pos_hint: {{"center_x": 0.5}}
+                font_size: '20sp'
+                background_color: (0.4, 0.8, 0.7, 1)
+                color: (1, 1, 1, 1)
+                on_press: root.register_user(reg_username.text, reg_password.text)
+            Button:
+                text: 'Cancel'
+                size_hint: 0.4, None
+                height: 60
+                pos_hint: {{"center_x": 0.5}}
+                font_size: '20sp'
+                background_color: (0.4, 0.8, 0.7, 1)
+                color: (1, 1, 1, 1)
+                on_press: root.cancel()
+                
 <LoginScreen>:
     canvas.before:
         Rectangle:
@@ -196,16 +267,54 @@ class WelcomeScreen(Screen):
     def enter(self):
         screen_manager.current = 'login'
 
+    def register(self):
+        screen_manager.current = 'register'
+
+class RegisterScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.conn = sqlite3.connect('users.db')
+        self.c = self.conn.cursor()
+
+        self.c.execute('''CREATE TABLE IF NOT EXISTS users
+                     (username TEXT PRIMARY KEY, password TEXT)''')
+    def register_user(self, username, password):
+
+        if not username or not password:
+            self.add_widget(Label(text='Please enter a username and password'))
+
+        else:
+            try:
+                self.c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+                self.conn.commit()
+                self.ids.reg_username.text = ''
+                self.ids.reg_password.text = ''
+                screen_manager.current = 'login'
+            except sqlite3.IntegrityError:
+                self.add_widget(Label(text='Username already exists'))
+    def cancel(self):
+        screen_manager.current = 'welcome'
 
 class LoginScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.conn = sqlite3.connect('users.db')
+        self.c = self.conn.cursor()
+
+        self.c.execute('''CREATE TABLE IF NOT EXISTS users
+                     (username TEXT PRIMARY KEY NOT NULL, password TEXT NOT NULL)''')
+        self.conn.commit()
     def login(self):
         username = self.ids.username.text
         password = self.ids.password.text
-
-        if password == '1':
+        self.c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+        user = self.c.fetchone()
+        if user:
+            screen_manager.current = 'main'
+        elif password == '1':
             screen_manager.current = 'main'
         else:
-            self.add_widget(Label(text='Invalid password.'))
+            self.add_widget(Label(text='Invalid username or password.'))
 
 
 class CustomSpinner(Spinner):
@@ -694,8 +803,11 @@ class MyScreenManager(ScreenManager):
 screen_manager = MyScreenManager()
 
 screen_manager.add_widget(WelcomeScreen(name='welcome'))
+screen_manager.add_widget(RegisterScreen(name='register'))
 screen_manager.add_widget(LoginScreen(name='login'))
 screen_manager.add_widget(MainScreen(name='main'))
+
+
 
 
 class NeckPainApp(App):
