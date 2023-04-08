@@ -204,9 +204,13 @@ class MainScreen(Screen):
         self.bad_posture_percentage = 0.00
         self.rollingaverageconn = sqlite3.connect(':memory:')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
+        self.prev_rolling_average = None  # Add this line to initialize the prev_rolling_average attribute
+        self.move_label = None
         self.threshold_timer = None
         self.threshold_exceeded_event = None
+        self.no_movement_time = 0
         self.threshold = 15
+        self.timer_active = False
 
         Clock.schedule_once(self.on_kv_post)
 
@@ -214,7 +218,7 @@ class MainScreen(Screen):
         try:
             # Open the serial port
             #self.arduino_port = "/dev/cu.ESP32_SPP"
-            self.arduino_port = "/dev/cu.usbserial-120"
+            self.arduino_port = "/dev/cu.usbserial-1120"
             #self.arduino_port = "/dev/cu.Bluetooth-Incoming-Port"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
@@ -223,6 +227,14 @@ class MainScreen(Screen):
         # create label to display stagnation time
         self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
         self.ids.main_layout.add_widget(self.stagnation_time_label)  # Add the label to the main_layout
+
+        self.threshold_timer_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
+        self.move_label = Label(size_hint=(1, 0.1), text='', font_size='50sp', color=(1, 0, 0, 1), bold=True)
+
+        self.ids.main_layout.add_widget(self.threshold_timer_label)
+        self.ids.main_layout.add_widget(self.move_label)
+
+        Clock.schedule_interval(self.update_no_movement_time, 0.1)
 
         # create database connection and cursor
         self.conn = sqlite3.connect('mydatabase.db')
@@ -271,6 +283,11 @@ class MainScreen(Screen):
 
         popup.open()
 
+    def update_no_movement_time(self, dt):
+        if self.timer_active:  # Only update the timer if the timer_active flag is True
+            self.no_movement_time += dt
+            self.threshold_timer_label.text = f"Time without movement: {self.no_movement_time:.2f} seconds"
+
     def confirm_settings(self, popup, stagnation_time_dropdown):
         selected_stagnation_time = stagnation_time_dropdown.text
         self.stagnation_time = int(selected_stagnation_time)
@@ -285,9 +302,16 @@ class MainScreen(Screen):
         popup.dismiss()
 
     def threshold_exceeded(self, rolling_average, threshold):
+        if self.prev_rolling_average is None:
+            self.prev_rolling_average = rolling_average
+            return False
+
         for i in range(4):
-            if abs(rolling_average[i]) > threshold:
+            if abs(rolling_average[i] - self.prev_rolling_average[i]) > threshold:
+                self.prev_rolling_average = rolling_average
                 return True
+
+        self.prev_rolling_average = rolling_average
         return False
 
     def timer_callback(self, dt):
@@ -301,6 +325,7 @@ class MainScreen(Screen):
         self.ids.stop_btn.disabled = True
         self.ids.start_btn.opacity = 1
         self.ids.start_btn.disabled = False
+        self.timer_active = False  # Set the timer_active flag to False
 
     def calculate_rolling_average(self, data, rolling_interval):
         rolling_data = []
@@ -332,6 +357,8 @@ class MainScreen(Screen):
                 self.ids.start_btn.opacity = 0
                 self.ids.start_btn.disabled = True
 
+                self.timer_active = True  # Set the timer_active flag to True
+
             # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, 1)
             # Schedule the receive_data method to be called every 1
@@ -354,21 +381,6 @@ class MainScreen(Screen):
         if self.serial_port:
             self.serial_port.close()
             self.serial_port = None
-
-    def is_bad_posture(self, avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, threshold=30):
-        return (
-                abs(avg_back_shift) > threshold
-                or abs(avg_back_lean) > threshold
-                or abs(avg_head_lean) > threshold
-                or abs(avg_head_shift) > threshold
-        )
-
-    def send_native_notification(title, message):
-        notification = NSUserNotification.alloc().init()
-        notification.setTitle_(title)
-        notification.setInformativeText_(message)
-        center = NSUserNotificationCenter.defaultUserNotificationCenter()
-        center.deliverNotification_(notification)
 
     def show_analysis_popup(self):
         popup = Popup(title="Analysis", size_hint=(0.5, 0.5), auto_dismiss=False)
@@ -455,31 +467,6 @@ class MainScreen(Screen):
             (start_time,))
         recent_rolling_averages = self.rollingaveragecursor.fetchall()
 
-    # Count the bad postures
-        bad_postures = 0
-        for ra in recent_rolling_averages:
-            if self.is_bad_posture(ra[0], ra[1], ra[2], ra[3]):
-                bad_postures += 1
-
-    # Calculate the percentage of bad postures
-        self.bad_posture_percentage = (bad_postures / len(recent_rolling_averages)) * 100
-
-    # Check for stagnation and send a notification if necessary
-        if self.bad_posture_percentage > 50:
-            self.ids.status.color = (1, 0, 0, 1)  # Red color
-            self.ids.status.text += "\nWarning: Stagnation detected!"
-            try:
-                notification.notify(
-                    title='Stagnation Warning',
-                    message='More than 50% bad postures detected in the last {} minutes.'.format(self.stagnation_time),
-                    app_name=App.get_running_app().title)
-            except NotImplementedError:
-                self.send_native_notification('Stagnation Warning',
-                                         'More than 50% bad postures detected in the last {} minutes.'.format(
-                                             self.stagnation_time))
-        else:
-            self.ids.status.color = (1, 1, 1, 1)  # White color
-
     def receive_data(self, dt):
         # Connect to SQLite database
         self.sensorconn = sqlite3.connect('sensor_data.db')
@@ -522,10 +509,16 @@ class MainScreen(Screen):
                                 if self.threshold_timer:
                                     self.threshold_timer.cancel()
                                 self.threshold_timer = Clock.schedule_once(self.timer_callback, self.stagnation_time)
+                                self.move_label.text = ''
+                                self.no_movement_time = 0  # Reset the no_movement_time to 0
+                            else:
+                                self.move_label.text = 'MOVE'
                             self.rollingaveragecursor.execute(
                                 "INSERT INTO rolling_averages (back_shift, back_lean, head_lean, head_shift, timestamp) VALUES (?, ?, ?, ?, ?)",
                                 most_recent_rolling_average)
                             self.rollingaverageconn.commit()
+
+                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f} \nTimestamp: {datetime.fromtimestamp(float(most_recent_rolling_average[4])).strftime('%Y-%m-%d %H:%M:%S')}"
 
                     except ValueError:
                         self.ids.status.text = "Failed reading data, please check the data format."
