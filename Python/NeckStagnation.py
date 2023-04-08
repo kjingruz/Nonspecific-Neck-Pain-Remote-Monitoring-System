@@ -201,7 +201,6 @@ class MainScreen(Screen):
         self.scroll_view = None
         self.arduino_port = None
         self.serial_port = None
-        self.bad_posture_percentage = 0.00
         self.rollingaverageconn = sqlite3.connect(':memory:')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
         self.prev_rolling_average = None  # Add this line to initialize the prev_rolling_average attribute
@@ -213,6 +212,7 @@ class MainScreen(Screen):
         self.check_stagnation_event = None  # Add this line to store the check_stagnation event
         self.longest_datetime = None
         self.longest_no_movement_time = 0
+        self.last_popup_time = 0
 
         Clock.schedule_once(self.on_kv_post)
 
@@ -379,7 +379,7 @@ class MainScreen(Screen):
 
     # Schedule the check_stagnation method to be called every minute
             if self.timer_active:
-                self.check_stagnation_event = Clock.schedule_interval(self.check_stagnation, 5)  # Store the event
+                self.check_stagnation_event = Clock.schedule_interval(self.check_stagnation, 1)  # Store the event
 
             self.ids.status.text = "Currently reading data."
 
@@ -437,7 +437,7 @@ class MainScreen(Screen):
 
         # Check if data is empty
         if not data:
-            print("No data to export.")
+            self.show_alert_popup("No data to export")
             workbook.close()
             return
 
@@ -480,14 +480,18 @@ class MainScreen(Screen):
             cursor = self.conn.cursor()
 
             if self.no_movement_time >= self.stagnation_time:
-                self.show_alert_popup('PLEASE MOVE AROUND.')
-                self.store_no_movement_time()
+                current_time = time.time()
+                if current_time - self.last_popup_time >= 5:
+                    self.show_alert_popup('PLEASE MOVE AROUND.')
+                    self.store_no_movement_time()
+                    self.last_popup_time = current_time
 
             # Update the longest no_movement_time and its datetime
             cursor.execute('SELECT MAX(no_movement_time), date_time FROM no_movement_times')
             row = cursor.fetchone()
             if row:
                 self.longest_no_movement_time, self.longest_datetime = row
+
 
     def store_no_movement_time(self):
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
