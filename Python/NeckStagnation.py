@@ -144,6 +144,9 @@ Builder.load_string(f'''
             text: 'Clear Data'
             size_hint: (0.2, 0.1)
             on_press: root.reset_sensor_data_db()
+        BoxLayout:
+            id: move_label_box
+            size_hint: (1, 0.1)
         ScrollView:
             Label:
                 id: status
@@ -228,11 +231,12 @@ class MainScreen(Screen):
         self.stagnation_time_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
         self.ids.main_layout.add_widget(self.stagnation_time_label)  # Add the label to the main_layout
 
-        self.threshold_timer_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
         self.move_label = Label(size_hint=(1, 0.1), text='', font_size='50sp', color=(1, 0, 0, 1), bold=True)
+        self.ids.move_label_box.add_widget(self.move_label)  # Add the move_label to the placeholder
 
+        self.threshold_timer_label = Label(size_hint=(1, 0.1), text='', font_size='20sp')
         self.ids.main_layout.add_widget(self.threshold_timer_label)
-        self.ids.main_layout.add_widget(self.move_label)
+
 
         Clock.schedule_interval(self.update_no_movement_time, 0.1)
 
@@ -248,11 +252,15 @@ class MainScreen(Screen):
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS settings
                               (id INTEGER PRIMARY KEY, stagnation_time INTEGER)''')
 
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS no_movement_times
+                                       (id INTEGER PRIMARY KEY, no_movement_time REAL, date_time TEXT)''')
+
         self.rollingaverageconn = sqlite3.connect('rollingaverage.db')
         self.rollingaveragecursor = self.rollingaverageconn.cursor()
 
         self.rollingaveragecursor.execute('''CREATE TABLE IF NOT EXISTS rolling_averages
                                 (back_shift REAL, back_lean REAL, head_lean REAL, head_shift REAL, timestamp REAL)''')
+
 
         # get the last selected stagnation time from the database
         self.cursor.execute('SELECT stagnation_time FROM settings ORDER BY id DESC LIMIT 1')
@@ -364,7 +372,7 @@ class MainScreen(Screen):
             # Schedule the receive_data method to be called every 1
 
     # Schedule the check_stagnation method to be called every minute
-            Clock.schedule_interval(self.check_stagnation, 60)
+            Clock.schedule_interval(self.check_stagnation, 1)  # Call the check_stagnation function every second
 
             self.ids.status.text = "Currently reading data."
 
@@ -458,14 +466,24 @@ class MainScreen(Screen):
         #os.startfile('posture_data_export.xlsx')
 
     def check_stagnation(self, dt):
-    # Calculate the time range to check for stagnation
-        start_time = time.time() - self.stagnation_time * 60
+        if self.no_movement_time >= self.stagnation_time:
+            self.move_label.text = 'MOVE'
+            self.store_no_movement_time()
+        else:
+            self.move_label.text = ''
 
-    # Fetch rolling averages within the specified time range
-        self.rollingaveragecursor.execute(
-            "SELECT * FROM rolling_averages WHERE timestamp >= ?",
-            (start_time,))
-        recent_rolling_averages = self.rollingaveragecursor.fetchall()
+        # Update the longest no_movement_time and its datetime
+        self.cursor.execute('SELECT MAX(no_movement_time), date_time FROM no_movement_times')
+        row = self.cursor.fetchone()
+        if row:
+            self.longest_no_movement_time, self.longest_datetime = row
+            # You can use these variables or display them as needed
+
+    def store_no_movement_time(self):
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute('INSERT INTO no_movement_times (no_movement_time, date_time) VALUES (?, ?)',
+                            (self.no_movement_time, current_time))
+        self.conn.commit()
 
     def receive_data(self, dt):
         # Connect to SQLite database
@@ -518,7 +536,7 @@ class MainScreen(Screen):
                                 most_recent_rolling_average)
                             self.rollingaverageconn.commit()
 
-                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f} \nTimestamp: {datetime.fromtimestamp(float(most_recent_rolling_average[4])).strftime('%Y-%m-%d %H:%M:%S')}"
+                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f} \nCurrent Time: {datetime.fromtimestamp(float(most_recent_rolling_average[4])).strftime('%Y-%m-%d %H:%M:%S')}"
 
                     except ValueError:
                         self.ids.status.text = "Failed reading data, please check the data format."
