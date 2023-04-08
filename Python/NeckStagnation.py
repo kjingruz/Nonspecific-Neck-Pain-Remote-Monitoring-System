@@ -211,6 +211,8 @@ class MainScreen(Screen):
         self.threshold = 15
         self.timer_active = False
         self.check_stagnation_event = None  # Add this line to store the check_stagnation event
+        self.longest_datetime = None
+        self.longest_no_movement_time = 0
 
         Clock.schedule_once(self.on_kv_post)
 
@@ -395,67 +397,70 @@ class MainScreen(Screen):
             self.serial_port.close()
             self.serial_port = None
 
+    from datetime import datetime
+
     def show_analysis_popup(self):
         popup = Popup(title="Analysis", size_hint=(0.5, 0.5), auto_dismiss=False)
         box = BoxLayout(orientation="vertical")
-        label = Label(text=f"Bad posture percentage: {self.bad_posture_percentage:.2f}%", markup=True)
-        label.color = (1, 0, 0, 1)  # Bold red color
+
+        # Add the longest no_movement time and its datetime
+        if self.longest_datetime:
+            longest_dt = datetime.strptime(self.longest_datetime, '%Y-%m-%d %H:%M:%S')
+            formatted_longest_dt = longest_dt.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            formatted_longest_dt = 'N/A'
+
+        longest_label = Label(
+            text=f"Longest no_movement time: {self.longest_no_movement_time:.2f}s\nDatetime: {formatted_longest_dt}")
+        box.add_widget(longest_label)
+
+        # Existing code
         export_button = Button(text="Export graph in Excel", on_release=self.export_to_excel)
         close_button = Button(text="Close", on_release=popup.dismiss)
 
-        box.add_widget(label)
         box.add_widget(export_button)
         box.add_widget(close_button)
         popup.add_widget(box)
         popup.open()
 
     def export_to_excel(self, *args):
-        workbook = xlsxwriter.Workbook('posture_data_export.xlsx')
+        workbook = xlsxwriter.Workbook('no_movement_data_export.xlsx')
         worksheet = workbook.add_worksheet()
 
         # Write the headers
         worksheet.write(0, 0, "Timestamp")
-        worksheet.write(0, 1, "Good Posture")
-        worksheet.write(0, 2, "Bad Posture")
+        worksheet.write(0, 1, "No Movement Time")
 
-        # Fetch all data from rolling_averages table
-        self.rollingaveragecursor.execute("SELECT * FROM rolling_averages")
-        data = self.rollingaveragecursor.fetchall()
+        # Fetch all data from no_movement_times table
+        self.cursor.execute("SELECT no_movement_time, date_time FROM no_movement_times")
+        data = self.cursor.fetchall()
+
+        # Check if data is empty
+        if not data:
+            print("No data to export.")
+            workbook.close()
+            return
 
         # Write the data to the worksheet
         for i, row in enumerate(data):
-            avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift, timestamp = row
-            posture = 1 if self.is_bad_posture(avg_back_shift, avg_back_lean, avg_head_lean, avg_head_shift) else 0
+            no_movement_time, timestamp = row
             worksheet.write(i + 1, 0, timestamp)
-            if posture == 0:
-                worksheet.write(i + 1, 1, 0)
-                worksheet.write(i + 1, 2, None)
-            else:
-                worksheet.write(i + 1, 1, None)
-                worksheet.write(i + 1, 2, 1)
+            worksheet.write(i + 1, 1, no_movement_time)
 
-        # Create a new line chart
-        chart = workbook.add_chart({'type': 'line'})
+        # Create a new bar chart
+        chart = workbook.add_chart({'type': 'bar'})
 
         # Configure the chart to use the data from the worksheet
         chart.add_series({
-            'name': 'Good Posture',
+            'name': 'No Movement Time',
             'categories': f'=Sheet1!$A$2:$A${i + 2}',
             'values': f'=Sheet1!$B$2:$B${i + 2}',
-            'line': {'color': 'red'},
-        })
-
-        chart.add_series({
-            'name': 'Bad Posture',
-            'categories': f'=Sheet1!$A$2:$A${i + 2}',
-            'values': f'=Sheet1!$C$2:$C${i + 2}',
-            'line': {'color': 'green'},
         })
 
         # Set the chart's title, x-axis, and y-axis names
-        chart.set_title({'name': 'Posture Over Time'})
+        chart.set_title({'name': 'No Movement Time Over Time'})
         chart.set_x_axis({'name': 'Timestamp'})
-        chart.set_y_axis({'name': 'Posture'})
+        chart.set_y_axis({'name': 'No Movement Time'})
 
         # Insert the chart into the worksheet
         worksheet.insert_chart('D2', chart)
@@ -463,7 +468,7 @@ class MainScreen(Screen):
         workbook.close()
 
         # Open the exported Excel file
-        subprocess.Popen(['open', 'posture_data_export.xlsx'])
+        subprocess.Popen(['open', 'no_movement_data_export.xlsx'])
 
     # Code to handle the exception
 
