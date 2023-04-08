@@ -706,7 +706,7 @@ class MainScreen(Screen):
                                 most_recent_rolling_average)
                             self.rollingaverageconn.commit()
 
-                            self.ids.status.text = f"Most recent rolling average: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f} \nCurrent Time: {datetime.fromtimestamp(float(most_recent_rolling_average[4])).strftime('%Y-%m-%d %H:%M:%S')}"
+                            self.ids.status.text = f"Most recent Output: \nBack Shift: {most_recent_rolling_average[0]:.2f} \nBack Lean: {most_recent_rolling_average[1]:.2f} \nHead Lean: {most_recent_rolling_average[2]:.2f} \nHead Shift: {most_recent_rolling_average[3]:.2f} \nCurrent Time: {datetime.fromtimestamp(float(most_recent_rolling_average[4])).strftime('%Y-%m-%d %H:%M:%S')}"
 
                     except ValueError:
                         self.ids.status.text = "Failed reading data, please check the data format."
