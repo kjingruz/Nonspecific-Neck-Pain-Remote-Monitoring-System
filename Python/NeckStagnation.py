@@ -518,6 +518,14 @@ class MainScreen(Screen):
     from datetime import datetime
 
     def show_analysis_popup(self):
+        # Fetch the longest no_movement time and its datetime from the database
+        with self.conn:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT MAX(no_movement_time), date_time FROM no_movement_times')
+            row = cursor.fetchone()
+            if row:
+                self.longest_no_movement_time, self.longest_datetime = row
+
         popup = Popup(title="Analysis", size_hint=(0.5, 0.5), auto_dismiss=False)
         box = BoxLayout(orientation="vertical")
 
@@ -528,8 +536,13 @@ class MainScreen(Screen):
         else:
             formatted_longest_dt = 'N/A'
 
+        if self.longest_no_movement_time:
+            longest_no_movement_time_str = f"{self.longest_no_movement_time:.2f}s"
+        else:
+            longest_no_movement_time_str = "N/A"
+
         longest_label = Label(
-            text=f"Longest no_movement time: {self.longest_no_movement_time:.2f}s\nDatetime: {formatted_longest_dt}")
+            text=f"Longest no_movement time: {longest_no_movement_time_str}\nDatetime: {formatted_longest_dt}")
         box.add_widget(longest_label)
 
         # Existing code
@@ -610,6 +623,10 @@ class MainScreen(Screen):
             if row:
                 self.longest_no_movement_time, self.longest_datetime = row
 
+            # Update the threshold_timer_label with the new longest_no_movement_time
+            if self.longest_no_movement_time and self.no_movement_time > self.longest_no_movement_time:
+                self.longest_no_movement_time = self.no_movement_time
+                self.longest_datetime = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
 
     def store_no_movement_time(self):
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -791,6 +808,9 @@ class MainScreen(Screen):
         self.sensorconn.commit()
         self.rollingaverageconn.commit()
 
+        # Reset the no_movement_time and update the label
+        self.no_movement_time = 0
+        self.threshold_timer_label.text = f"Time without movement: {self.no_movement_time:.2f} seconds"
 
         # Dismiss the popup
         popup.dismiss()
