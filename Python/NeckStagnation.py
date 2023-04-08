@@ -345,7 +345,7 @@ class MainScreen(Screen):
 
     def on_kv_post(self, *args):
         try:
-            self.arduino_port = "/dev/cu.usbserial-1120"
+            self.arduino_port = "/dev/cu.usbserial-120"
             self.serial_port = serial.Serial(self.arduino_port, 115200, timeout=1)
         except serial.serialutil.SerialException as e:
             self.ids.status.text = "No connection to serial port"
@@ -491,7 +491,6 @@ class MainScreen(Screen):
 
                 self.timer_active = True  # Set the timer_active flag to True
 
-            # Schedule the receive_data method to be called every 0.1 seconds
             Clock.schedule_interval(self.receive_data, 1)
             # Schedule the receive_data method to be called every 1
 
@@ -518,6 +517,12 @@ class MainScreen(Screen):
     from datetime import datetime
 
     def show_analysis_popup(self):
+        # Update the longest no_movement_time and its datetime if the current no_movement_time is larger
+        if self.no_movement_time > self.longest_no_movement_time:
+            self.longest_no_movement_time = self.no_movement_time
+            self.longest_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.store_no_movement_time()  # Store the updated longest no_movement_time in the database
+
         # Fetch the longest no_movement time and its datetime from the database
         with self.conn:
             cursor = self.conn.cursor()
@@ -538,6 +543,8 @@ class MainScreen(Screen):
 
         if self.longest_no_movement_time:
             longest_no_movement_time_str = f"{self.longest_no_movement_time:.2f}s"
+            print(longest_no_movement_time_str)
+            print(self.no_movement_time)
         else:
             longest_no_movement_time_str = "N/A"
 
