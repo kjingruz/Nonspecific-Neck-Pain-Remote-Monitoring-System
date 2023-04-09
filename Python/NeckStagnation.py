@@ -194,7 +194,7 @@ Builder.load_string(f'''
             bold: True
             color: (0, 1, 0, 1)
         Label:
-            text: 'Welcome, '
+            text: ''
             size_hint: 1, 0.1
             font_size: '20sp'
             color: (0, 1, 0, 1)
@@ -573,12 +573,12 @@ class MainScreen(Screen):
         popup.open()
 
     def export_to_excel(self, *args):
-        workbook = xlsxwriter.Workbook('no_movement_data_export.xlsx')
+        workbook = xlsxwriter.Workbook('Data_of_Patient_Stagnation_Time_export.xlsx')
         worksheet = workbook.add_worksheet()
 
         # Write the headers
         worksheet.write(0, 0, "Timestamp")
-        worksheet.write(0, 1, "No Movement Time")
+        worksheet.write(0, 1, "Time Spent Still")
 
         # Fetch all data from no_movement_times table
         self.cursor.execute("SELECT no_movement_time, date_time FROM no_movement_times")
@@ -601,15 +601,15 @@ class MainScreen(Screen):
 
         # Configure the chart to use the data from the worksheet
         chart.add_series({
-            'name': 'No Movement Time',
+            'name': 'Time Spent Still',
             'categories': f'=Sheet1!$A$2:$A${i + 2}',
             'values': f'=Sheet1!$B$2:$B${i + 2}',
         })
 
         # Set the chart's title, x-axis, and y-axis names
-        chart.set_title({'name': 'No Movement Time Over Time'})
-        chart.set_x_axis({'name': 'Timestamp'})
-        chart.set_y_axis({'name': 'No Movement Time'})
+        chart.set_title({'name': 'Data of Patient Stagnation Time'})
+        chart.set_x_axis({'name': 'Time Spent Still'})
+        chart.set_y_axis({'name': 'Timestamp'})
 
         # Insert the chart into the worksheet
         worksheet.insert_chart('D2', chart)
