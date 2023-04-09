@@ -178,6 +178,15 @@ Builder.load_string(f'''
                 background_color: (0.4, 0.8, 0.7, 1)
                 color: (1, 1, 1, 1)
                 on_press: root.login()
+            Button:
+                text: 'Cancel'
+                size_hint: 0.4, None
+                height: 60
+                pos_hint: {{"center_x": 0.5}}
+                font_size: '20sp'
+                background_color: (0.4, 0.8, 0.7, 1)
+                color: (1, 1, 1, 1)
+                on_press: root.cancel()
 
 <CustomSpinner>:
     text: '10'
@@ -235,6 +244,10 @@ Builder.load_string(f'''
                 text: 'Clear Data'
                 size_hint: (0.2, 1.5)
                 on_press: root.reset_sensor_data_db()
+            Button:
+                text: 'Log Out'
+                size_hint: (0.2, 1.5)
+                on_press: root.logout()
         ScrollView:
             Label:
                 id: status
@@ -320,6 +333,9 @@ class LoginScreen(Screen):
             screen_manager.current = 'main'
         else:
             self.add_widget(Label(text='Invalid username or password.'))
+
+    def cancel(self):
+        screen_manager.current = 'welcome'
 
 
 class CustomSpinner(Spinner):
@@ -453,6 +469,9 @@ class MainScreen(Screen):
                     return True
 
         return False
+
+    def logout(self):
+        self.manager.current = 'welcome'
 
     def timer_callback(self, dt):
         self.ids.status.text += "\nError: Threshold not exceeded for the selected time."
