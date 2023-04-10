@@ -415,7 +415,7 @@ class MainScreen(Screen):
         content = BoxLayout(orientation='vertical')
 
         stagnation_time_dropdown = CustomSpinner(size_hint=(1, 0.2))
-        stagnation_time_dropdown.values = ['10', '15', '20', '25', '30', '35', '40', '45', '50', '55', '60']
+        stagnation_time_dropdown.values = ['10', '15', '20', '25', '30', '35', '40', '45', '50', '55', '60', '900', '1800', '3600']
 
         confirm_button = Button(text='Confirm', size_hint=(1, 0.2))
 
@@ -579,7 +579,7 @@ class MainScreen(Screen):
             longest_no_movement_time_str = "N/A"
 
         longest_label = Label(
-            text=f"Longest no_movement time: {longest_no_movement_time_str}\nDatetime: {formatted_longest_dt}")
+            text=f"Longest Stagnation time: {longest_no_movement_time_str}\nDatetime: {formatted_longest_dt}")
         box.add_widget(longest_label)
 
         # Existing code
@@ -592,7 +592,7 @@ class MainScreen(Screen):
         popup.open()
 
     def export_to_excel(self, *args):
-        workbook = xlsxwriter.Workbook('Data_of_Patient_Stagnation_Time_export.xlsx')
+        workbook = xlsxwriter.Workbook('posture_data_export.xlsx')
         worksheet = workbook.add_worksheet()
 
         # Write the headers
@@ -636,7 +636,7 @@ class MainScreen(Screen):
         workbook.close()
 
         # Open the exported Excel file
-        subprocess.Popen(['open', 'no_movement_data_export.xlsx'])
+        subprocess.Popen(['open', 'posture_data_export.xlsx'])
 
     # Code to handle the exception
 
